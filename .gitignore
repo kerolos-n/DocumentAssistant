@@ -1,0 +1,132 @@
+# ---------------------------------------------------------------------------
+# Root .gitignore for DocumentAssistant (Angular client + ASP.NET Core server)
+# Stack-specific rules also live in client/.gitignore
+# ---------------------------------------------------------------------------
+
+# -------------------------
+# Node / Angular (client/)
+# -------------------------
+node_modules/
+dist/
+tmp/
+out-tsc/
+bazel-out/
+.angular/
+.sass-cache/
+coverage/
+libpeerconnection.log
+testem.log
+typings/
+
+# Package manager
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+
+
+# -------------------------
+# .NET (server/)
+# -------------------------
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+build/
+build_output/
+output/
+artifacts/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.swp
+*~
+.axo
+.history/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+!packages/build/
+project.lock.json
+project.fragment.lock.json
+.nuget/
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+*.VisualState.xml
+TestResult.xml
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# Publish output
+publish/
+*.publishsettings
+PublishProfiles/
+
+# Entity Framework / local databases
+*.dbmdl
+*.jfm
+*.mdf
+*.ldf
+*.ndf
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# -------------------------
+# Secrets & environment
+# -------------------------
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+secrets.json
+
+# -------------------------
+# Logs
+# -------------------------
+logs/
+*.log
+!npm-debug.log*
+
+# -------------------------
+# OS files
+# -------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# -------------------------
+# Claude Code
+# -------------------------
+.claude/settings.local.json
