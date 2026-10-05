@@ -53,6 +53,17 @@ public sealed class DocumentStorage
         return blobName;
     }
 
+    /// <summary>Opens a stream for reading; the blob downloads as the stream is consumed.</summary>
+    public async Task<Stream> OpenReadAsync(string blobName, CancellationToken cancellationToken)
+    {
+        await EnsureContainerAsync(cancellationToken);
+
+        // Blobs are write-once (GUID names are never reused), so refusing to read a blob that
+        // changed mid-stream can only surface a real problem rather than block a legitimate read.
+        return await _container.GetBlobClient(blobName)
+            .OpenReadAsync(new BlobOpenReadOptions(allowModifications: false), cancellationToken);
+    }
+
     /// <summary>Best-effort removal, used to roll back a blob when its metadata row cannot be saved.</summary>
     public async Task DeleteAsync(string blobName, CancellationToken cancellationToken)
     {

@@ -166,4 +166,66 @@ describe('DocumentsPage', () => {
 
     expect(root.textContent).toContain('No documents yet');
   });
+
+  it('downloads a document as a blob under its original name', async () => {
+    const { fixture, root } = await createPage([sampleDocument()]);
+
+    // jsdom implements neither object-URL method, so stub them and restore afterwards.
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    const createObjectUrl = vi.fn(() => 'blob:mock-url');
+    const revokeObjectUrl = vi.fn();
+    URL.createObjectURL = createObjectUrl;
+    URL.revokeObjectURL = revokeObjectUrl;
+
+    let clickedAnchor: HTMLAnchorElement | null = null;
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clickedAnchor = this;
+      });
+
+    try {
+      buttonByText(root, 'Download').click();
+      fixture.detectChanges();
+
+      const download = httpTesting.expectOne({
+        method: 'GET',
+        url: `${documentsUrl}/document-1/download`,
+      });
+      expect(download.request.responseType).toBe('blob');
+      download.flush(new Blob(['# Notes'], { type: 'text/markdown' }));
+
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
+      expect(clickedAnchor?.download).toBe('notes.md');
+    } finally {
+      click.mockRestore();
+      URL.createObjectURL = originalCreateObjectUrl;
+      URL.revokeObjectURL = originalRevokeObjectUrl;
+    }
+  });
+
+  it('shows a message when the download is not found', async () => {
+    const { fixture, root } = await createPage([sampleDocument()]);
+
+    buttonByText(root, 'Download').click();
+    fixture.detectChanges();
+
+    httpTesting
+      .expectOne({ method: 'GET', url: `${documentsUrl}/document-1/download` })
+      .flush(new Blob(['{}'], { type: 'application/json' }), {
+        status: 404,
+        statusText: 'Not Found',
+      });
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain(
+      'That document is no longer available.',
+    );
+  });
 });

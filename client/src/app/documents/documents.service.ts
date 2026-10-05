@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
-import { finalize } from 'rxjs';
+import { finalize, Observable } from 'rxjs';
 import env from '../../environments/environment';
 
 export interface DocumentSummary {
@@ -61,5 +61,15 @@ export class DocumentsService {
   /** Removes the document's metadata row and its blob. The API scopes this to the owner. */
   delete(id: string) {
     return this.http.delete<void>(`${this.documentsUrl}/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * Downloads the document's bytes. `responseType: 'blob'` keeps the body binary rather than
+   * letting Angular try to parse it as JSON.
+   */
+  download(id: string): Observable<Blob> {
+    return this.http.get(`${this.documentsUrl}/${encodeURIComponent(id)}/download`, {
+      responseType: 'blob',
+    });
   }
 }

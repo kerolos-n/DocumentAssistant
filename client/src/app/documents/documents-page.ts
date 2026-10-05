@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { finalize } from 'rxjs';
 import { flattenProblemDetails } from '../shared/problem-details';
-import { DocumentsService } from './documents.service';
+import { DocumentsService, DocumentSummary } from './documents.service';
 
 @Component({
   imports: [DatePipe],
@@ -23,6 +23,7 @@ export class DocumentsPage {
   /** The row whose Delete button has been pressed once and is awaiting confirmation. */
   protected readonly pendingDeleteId = signal<string | null>(null);
   protected readonly deletingId = signal<string | null>(null);
+  protected readonly downloadingId = signal<string | null>(null);
   protected readonly canUpload = computed(
     () => this.selectedFile() !== null && !this.isUploading(),
   );
@@ -94,6 +95,31 @@ export class DocumentsPage {
       });
   }
 
+  protected downloadDocument(summary: DocumentSummary): void {
+    if (this.downloadingId() !== null) {
+      return;
+    }
+
+    this.errorMessage.set(null);
+    this.downloadingId.set(summary.id);
+
+    this.documentsService
+      .download(summary.id)
+      .pipe(finalize(() => this.downloadingId.set(null)))
+      .subscribe({
+        next: (blob) => this.saveBlob(blob, summary.fileName),
+        error: (error: unknown) => {
+          // The body is a `Blob` because the request asked for one, so `flattenProblemDetails`
+          // cannot read it — a status-specific message is the most useful thing we can show.
+          const message =
+            error instanceof HttpErrorResponse && error.status === 404
+              ? 'That document is no longer available.'
+              : 'The document could not be downloaded. Please try again.';
+          this.errorMessage.set(message);
+        },
+      });
+  }
+
   protected formatSize(bytes: number): string {
     if (bytes < 1024) {
       return `${bytes} B`;
@@ -124,6 +150,20 @@ export class DocumentsPage {
     }
 
     return fallback;
+  }
+
+  /** Saves a downloaded blob under its original name via a transient object URL. */
+  private saveBlob(blob: Blob, fileName: string): void {
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = globalThis.document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    anchor.rel = 'noopener';
+    globalThis.document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    // Revoking synchronously can cancel the download in some browsers, so defer a tick.
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
   }
 
   private resetFileInput(): void {
