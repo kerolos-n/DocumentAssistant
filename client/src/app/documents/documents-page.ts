@@ -20,6 +20,9 @@ export class DocumentsPage {
   protected readonly selectedFile = signal<File | null>(null);
   protected readonly isUploading = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
+  /** The row whose Delete button has been pressed once and is awaiting confirmation. */
+  protected readonly pendingDeleteId = signal<string | null>(null);
+  protected readonly deletingId = signal<string | null>(null);
   protected readonly canUpload = computed(
     () => this.selectedFile() !== null && !this.isUploading(),
   );
@@ -49,7 +52,45 @@ export class DocumentsPage {
           this.selectedFile.set(null);
           this.documentsService.reload();
         },
-        error: (error: unknown) => this.errorMessage.set(this.uploadErrorMessage(error)),
+        error: (error: unknown) => {
+          this.errorMessage.set(
+            this.errorMessageFor(error, 'The upload failed. Please try again.'),
+          );
+        },
+      });
+  }
+
+  protected confirmDelete(id: string): void {
+    this.errorMessage.set(null);
+    this.pendingDeleteId.set(id);
+  }
+
+  protected cancelDelete(): void {
+    this.pendingDeleteId.set(null);
+  }
+
+  protected deleteDocument(id: string): void {
+    if (this.deletingId() !== null) {
+      return;
+    }
+
+    this.errorMessage.set(null);
+    this.deletingId.set(id);
+
+    this.documentsService
+      .delete(id)
+      .pipe(finalize(() => this.deletingId.set(null)))
+      .subscribe({
+        next: () => {
+          this.pendingDeleteId.set(null);
+          this.documentsService.reload();
+        },
+        error: (error: unknown) => {
+          this.pendingDeleteId.set(null);
+          this.errorMessage.set(
+            this.errorMessageFor(error, 'The document could not be deleted. Please try again.'),
+          );
+        },
       });
   }
 
@@ -70,27 +111,19 @@ export class DocumentsPage {
   }
 
   protected listErrorMessage(error: unknown): string {
-    if (error instanceof HttpErrorResponse) {
-      if (error.status === 0) {
-        return 'Could not reach the server. Check that the API is running.';
-      }
-
-      return flattenProblemDetails(error.error) ?? 'Could not load your documents.';
-    }
-
-    return 'Could not load your documents.';
+    return this.errorMessageFor(error, 'Could not load your documents.');
   }
 
-  private uploadErrorMessage(error: unknown): string {
+  private errorMessageFor(error: unknown, fallback: string): string {
     if (error instanceof HttpErrorResponse) {
       if (error.status === 0) {
         return 'Could not reach the server. Check that the API is running.';
       }
 
-      return flattenProblemDetails(error.error) ?? 'The upload failed. Please try again.';
+      return flattenProblemDetails(error.error) ?? fallback;
     }
 
-    return 'The upload failed. Please try again.';
+    return fallback;
   }
 
   private resetFileInput(): void {

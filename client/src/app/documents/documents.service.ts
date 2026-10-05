@@ -57,4 +57,9 @@ export class DocumentsService {
     // so callers show an indeterminate busy state instead of a percentage.
     return this.http.post<DocumentSummary>(this.documentsUrl, formData);
   }
+
+  /** Removes the document's metadata row and its blob. The API scopes this to the owner. */
+  delete(id: string) {
+    return this.http.delete<void>(`${this.documentsUrl}/${encodeURIComponent(id)}`);
+  }
 }

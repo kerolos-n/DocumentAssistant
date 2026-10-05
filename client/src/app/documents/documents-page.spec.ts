@@ -53,7 +53,17 @@ describe('DocumentsPage', () => {
   }
 
   function uploadButton(root: HTMLElement): HTMLButtonElement {
-    return root.querySelector('button[type="button"]') as HTMLButtonElement;
+    return root.querySelector('#upload-document') as HTMLButtonElement;
+  }
+
+  function buttonByText(root: HTMLElement, text: string): HTMLButtonElement {
+    const button = Array.from(root.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === text,
+    );
+    if (!button) {
+      throw new Error(`No button labelled "${text}" was rendered.`);
+    }
+    return button;
   }
 
   function sampleDocument(overrides: Partial<DocumentSummary> = {}): DocumentSummary {
@@ -123,5 +133,37 @@ describe('DocumentsPage', () => {
     expect(root.querySelector('[role="alert"]')?.textContent).toContain(
       'Choose a PDF, DOCX, MD, or TXT file.',
     );
+  });
+
+  it('deletes a document only after the inline confirmation', async () => {
+    const { fixture, root } = await createPage([sampleDocument()]);
+
+    buttonByText(root, 'Delete').click();
+    fixture.detectChanges();
+
+    // The first click only arms the row; no request may be sent yet.
+    httpTesting.expectNone({ method: 'DELETE' });
+    expect(root.textContent).toContain('Delete this document?');
+
+    buttonByText(root, 'Cancel').click();
+    fixture.detectChanges();
+
+    httpTesting.expectNone({ method: 'DELETE' });
+    expect(buttonByText(root, 'Delete').textContent?.trim()).toBe('Delete');
+
+    buttonByText(root, 'Delete').click();
+    fixture.detectChanges();
+    buttonByText(root, 'Confirm').click();
+    fixture.detectChanges();
+
+    httpTesting
+      .expectOne({ method: 'DELETE', url: `${documentsUrl}/document-1` })
+      .flush(null, { status: 204, statusText: 'No Content' });
+
+    httpTesting.expectOne({ method: 'GET', url: documentsUrl }).flush([]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(root.textContent).toContain('No documents yet');
   });
 });
