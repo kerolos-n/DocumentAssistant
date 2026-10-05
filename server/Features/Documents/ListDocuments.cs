@@ -33,7 +33,9 @@ internal static class ListDocuments
                     document.FileName,
                     document.ContentType,
                     document.SizeInBytes,
-                    document.UploadedAtUtc))
+                    document.UploadedAtUtc,
+                    document.Status,
+                    document.ErrorMessage))
                 .ToListAsync(cancellationToken);
         }
     }

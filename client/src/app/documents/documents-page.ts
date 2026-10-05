@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { finalize } from 'rxjs';
 import { flattenProblemDetails } from '../shared/problem-details';
-import { DocumentsService, DocumentSummary } from './documents.service';
+import { DocumentsService, DocumentStatus, DocumentSummary } from './documents.service';
 
 @Component({
   imports: [DatePipe],
@@ -27,6 +27,17 @@ export class DocumentsPage {
   protected readonly canUpload = computed(
     () => this.selectedFile() !== null && !this.isUploading(),
   );
+
+  /**
+   * Badge colours per ingestion status. These are complete class names, not fragments, so
+   * Tailwind's scanner finds them in this file and emits the utilities.
+   */
+  protected readonly statusClasses: Readonly<Record<DocumentStatus, string>> = {
+    Pending: 'bg-amber-100 text-amber-800',
+    Processing: 'bg-sky-100 text-sky-800',
+    Ready: 'bg-emerald-100 text-emerald-800',
+    Failed: 'bg-red-100 text-red-800',
+  };
 
   protected onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;

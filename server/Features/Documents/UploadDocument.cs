@@ -5,6 +5,7 @@ using DocumentAssistant.Common.Endpoints;
 using DocumentAssistant.Data;
 using DocumentAssistant.Data.Entities;
 using DocumentAssistant.Services;
+using DocumentAssistant.Services.Ingestion;
 using FluentValidation;
 
 namespace DocumentAssistant.Features.Documents;
@@ -42,6 +43,7 @@ internal static class UploadDocument
     internal sealed class Handler(
         ApplicationDbContext db,
         DocumentStorage storage,
+        DocumentIngestionQueue ingestionQueue,
         ILogger<Handler> logger) : ICommandHandler<Command, DocumentResponse>
     {
         public async Task<DocumentResponse> Handle(Command command, CancellationToken cancellationToken)
@@ -84,6 +86,7 @@ internal static class UploadDocument
                 SizeInBytes = file.Length,
                 BlobName = blobName,
                 UploadedAtUtc = uploadedAtUtc,
+                Status = DocumentStatus.Pending,
             });
 
             try
@@ -97,7 +100,18 @@ internal static class UploadDocument
                 throw;
             }
 
-            return new DocumentResponse(id, fileName, contentType, file.Length, uploadedAtUtc);
+            // Only once the row is committed: the worker looks the document up by id, so an
+            // earlier enqueue would race the insert.
+            ingestionQueue.Enqueue(id);
+
+            return new DocumentResponse(
+                id,
+                fileName,
+                contentType,
+                file.Length,
+                uploadedAtUtc,
+                DocumentStatus.Pending,
+                null);
         }
 
         private async Task TryDeleteBlobAsync(string blobName, CancellationToken cancellationToken)

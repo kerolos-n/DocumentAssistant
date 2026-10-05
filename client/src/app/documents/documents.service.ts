@@ -1,7 +1,13 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable, signal } from '@angular/core';
-import { finalize, Observable } from 'rxjs';
+import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { catchError, EMPTY, finalize, interval, Observable, switchMap } from 'rxjs';
 import env from '../../environments/environment';
+
+/**
+ * Mirrors the server's `DocumentStatus` enum, which is serialized as a string.
+ * `Pending`/`Processing` are still in flight; `Ready`/`Failed` are settled.
+ */
+export type DocumentStatus = 'Pending' | 'Processing' | 'Ready' | 'Failed';
 
 export interface DocumentSummary {
   readonly id: string;
@@ -9,7 +15,12 @@ export interface DocumentSummary {
   readonly contentType: string;
   readonly sizeInBytes: number;
   readonly uploadedAtUtc: string;
+  readonly status: DocumentStatus;
+  readonly errorMessage: string | null;
 }
+
+/** How often the list is refreshed while any document is still being ingested. */
+const POLL_INTERVAL_MS = 3000;
 
 @Injectable({ providedIn: 'root' })
 export class DocumentsService {
@@ -25,8 +36,38 @@ export class DocumentsService {
   readonly isLoading = this.loadingState.asReadonly();
   readonly loadError = this.errorState.asReadonly();
 
+  /** True while a document is still queued or being processed — i.e. while polling pays off. */
+  private readonly hasUnsettledDocuments = computed(() =>
+    this.documentsState().some(
+      (document) => document.status === 'Pending' || document.status === 'Processing',
+    ),
+  );
+
   constructor() {
     this.reload();
+
+    // Poll only while something is still being ingested. Reading the computed (not the array)
+    // means the effect re-runs when that boolean flips and not on every response, so the
+    // interval keeps a steady cadence. Its cleanup unsubscribes when everything has settled,
+    // which is also why specs that render only Ready documents never start a timer.
+    effect((onCleanup) => {
+      if (!this.hasUnsettledDocuments()) {
+        return;
+      }
+
+      const subscription = interval(POLL_INTERVAL_MS)
+        .pipe(
+          // Refresh quietly: a poll must not flip `isLoading`, which would replace the list with
+          // a loading message every few seconds. A failed poll is swallowed so a blip does not
+          // kill the cadence; the next tick tries again.
+          switchMap(() =>
+            this.http.get<DocumentSummary[]>(this.documentsUrl).pipe(catchError(() => EMPTY)),
+          ),
+        )
+        .subscribe((documents) => this.documentsState.set(documents));
+
+      onCleanup(() => subscription.unsubscribe());
+    });
   }
 
   /**
@@ -58,7 +99,7 @@ export class DocumentsService {
     return this.http.post<DocumentSummary>(this.documentsUrl, formData);
   }
 
-  /** Removes the document's metadata row and its blob. The API scopes this to the owner. */
+  /** Removes the document's metadata row, its blob, and its chunks. The API scopes this to the owner. */
   delete(id: string) {
     return this.http.delete<void>(`${this.documentsUrl}/${encodeURIComponent(id)}`);
   }

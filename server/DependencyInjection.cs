@@ -1,11 +1,14 @@
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Reflection;
 using DocumentAssistant.Common.Behaviors;
+using DocumentAssistant.Common.Ingestion;
 using DocumentAssistant.Extensions;
 using DocumentAssistant.Features.Auth;
 using DocumentAssistant.Data;
 using DocumentAssistant.Services;
+using DocumentAssistant.Services.Ingestion;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -13,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using DocumentAssistant.Common.Exceptions;
 using DocumentAssistant.Common.CQRS;
+using Pgvector.EntityFrameworkCore;
 
 namespace DocumentAssistant;
 
@@ -65,7 +69,10 @@ public static class DependencyInjection
                 "Azure:BlobStorage:ContainerName must be configured.");
         }
 
-        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
+        // UseVector teaches Npgsql to read and write the `vector` type that DocumentChunk.Embedding
+        // maps to; without it, inserts fail at runtime rather than at startup.
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseNpgsql(connectionString, npgsql => npgsql.UseVector()));
         services.AddIdentityCore<IdentityUser>(options =>
             {
                 options.User.RequireUniqueEmail = true;
@@ -97,6 +104,14 @@ public static class DependencyInjection
 
         services.AddSingleton(new JwtTokenService(jwtKey, jwtIssuer, jwtAudience, jwtExpirationMinutes));
         services.AddSingleton(new DocumentStorage(blobConnectionString, blobContainerName));
+
+        // Status travels to the client as a readable name ("Processing"), not an ordinal, so the
+        // Angular badges can switch on it directly.
+        services.ConfigureHttpJsonOptions(options =>
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
+        AddIngestion(services, configuration);
+
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
@@ -125,5 +140,34 @@ public static class DependencyInjection
             .AllowAnyMethod()));
 
         services.AddEndpoints(Assembly.GetExecutingAssembly());
+    }
+
+    /// <summary>
+    /// Registers the extract → chunk → embed → store pipeline. Extractors are singletons (they
+    /// hold no state), the chunker and embedder are configured once from the <c>Ingestion</c>
+    /// section, and the worker is a hosted service so it starts and stops with the app.
+    /// </summary>
+    private static void AddIngestion(IServiceCollection services, IConfiguration configuration)
+    {
+        var chunkSize = configuration.GetValue("Ingestion:ChunkSize", IngestionDefaults.ChunkSize);
+        var chunkOverlap = configuration.GetValue("Ingestion:ChunkOverlap", IngestionDefaults.ChunkOverlap);
+        var embeddingBatchSize = configuration.GetValue(
+            "Ingestion:EmbeddingBatchSize",
+            IngestionDefaults.EmbeddingBatchSize);
+
+        services.AddSingleton<ITextExtractor, PdfTextExtractor>();
+        services.AddSingleton<ITextExtractor, DocxTextExtractor>();
+        services.AddSingleton<ITextExtractor, PlainTextExtractor>();
+        services.AddSingleton<TextExtractorResolver>();
+
+        services.AddSingleton<ITextChunker>(new TextChunker(chunkSize, chunkOverlap));
+
+        // A credentials-free stand-in. Point this at a real provider (and match the vector width
+        // to IngestionDefaults.EmbeddingDimensions) to produce semantic embeddings.
+        services.AddSingleton<IEmbeddingService>(
+            new StubEmbeddingService(IngestionDefaults.EmbeddingDimensions, embeddingBatchSize));
+
+        services.AddSingleton<DocumentIngestionQueue>();
+        services.AddHostedService<DocumentIngestionWorker>();
     }
 }

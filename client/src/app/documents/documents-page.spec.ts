@@ -73,6 +73,10 @@ describe('DocumentsPage', () => {
       contentType: 'text/markdown',
       sizeInBytes: 2048,
       uploadedAtUtc: new Date().toISOString(),
+      // Ready by default: a settled document never starts the polling timer, which keeps
+      // `whenStable()` and `httpTesting.verify()` meaningful in every other spec.
+      status: 'Ready',
+      errorMessage: null,
       ...overrides,
     };
   }
@@ -227,5 +231,68 @@ describe('DocumentsPage', () => {
     expect(root.querySelector('[role="alert"]')?.textContent).toContain(
       'That document is no longer available.',
     );
+  });
+
+  it('shows the ingestion status for each document', async () => {
+    const { root } = await createPage([
+      sampleDocument({ status: 'Pending' }),
+      sampleDocument({ id: 'document-2', fileName: 'paper.pdf', status: 'Processing' }),
+      sampleDocument({ id: 'document-3', fileName: 'report.docx', status: 'Ready' }),
+    ]);
+
+    expect(root.textContent).toContain('Pending');
+    expect(root.textContent).toContain('Processing');
+    expect(root.textContent).toContain('Ready');
+    // Only a document that is actively moving gets a spinner.
+    expect(root.querySelectorAll('svg.animate-spin')).toHaveLength(1);
+  });
+
+  it('shows the failure reason for a document that could not be processed', async () => {
+    const { root } = await createPage([
+      sampleDocument({
+        fileName: 'scan.pdf',
+        status: 'Failed',
+        errorMessage: 'No text could be extracted from this PDF. It may be a scan of images.',
+      }),
+    ]);
+
+    expect(root.textContent).toContain('Failed');
+    expect(root.textContent).toContain('No text could be extracted from this PDF.');
+  });
+
+  it('polls while a document is processing and stops once it is ready', async () => {
+    // Fake timers must be installed before the component exists, because the polling interval
+    // is created from the service constructor.
+    vi.useFakeTimers();
+
+    try {
+      const fixture = TestBed.createComponent(DocumentsPage);
+      fixture.detectChanges();
+
+      httpTesting
+        .expectOne({ method: 'GET', url: documentsUrl })
+        .flush([sampleDocument({ status: 'Processing' })]);
+      // Let the polling effect run and subscribe to the interval.
+      await Promise.resolve();
+      fixture.detectChanges();
+
+      await vi.advanceTimersByTimeAsync(3000);
+      httpTesting
+        .expectOne({ method: 'GET', url: documentsUrl })
+        .flush([sampleDocument({ status: 'Processing' })]);
+      fixture.detectChanges();
+
+      await vi.advanceTimersByTimeAsync(3000);
+      httpTesting
+        .expectOne({ method: 'GET', url: documentsUrl })
+        .flush([sampleDocument({ status: 'Ready' })]);
+      fixture.detectChanges();
+
+      // The document settled, so the interval is torn down and nothing else is requested.
+      await vi.advanceTimersByTimeAsync(30_000);
+      httpTesting.expectNone({ method: 'GET', url: documentsUrl });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

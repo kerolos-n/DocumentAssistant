@@ -45,6 +45,8 @@ internal static class DeleteDocument
                 return false;
             }
 
+            // The DocumentChunks foreign key is ON DELETE CASCADE, so removing the row removes
+            // the document's chunks in the same transaction — no separate delete needed.
             db.Documents.Remove(document);
             await db.SaveChangesAsync(cancellationToken);
 

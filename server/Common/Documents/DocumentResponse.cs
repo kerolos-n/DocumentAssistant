@@ -1,3 +1,5 @@
+using DocumentAssistant.Data.Entities;
+
 namespace DocumentAssistant.Common.Documents;
 
 public sealed record DocumentResponse(
@@ -5,4 +7,6 @@ public sealed record DocumentResponse(
     string FileName,
     string ContentType,
     long SizeInBytes,
-    DateTime UploadedAtUtc);
+    DateTime UploadedAtUtc,
+    DocumentStatus Status,
+    string? ErrorMessage);
