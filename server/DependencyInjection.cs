@@ -51,6 +51,20 @@ public static class DependencyInjection
         var jwtExpirationMinutes = configuration.GetValue<int>("Jwt:ExpirationMinutes", 60);
         var jwtSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
+        var blobConnectionString = configuration["Azure:BlobStorage:ConnectionString"];
+        if (string.IsNullOrWhiteSpace(blobConnectionString))
+        {
+            throw new InvalidOperationException(
+                "Azure:BlobStorage:ConnectionString must be configured " +
+                "(use 'UseDevelopmentStorage=true' with Azurite locally).");
+        }
+        var blobContainerName = configuration["Azure:BlobStorage:ContainerName"];
+        if (string.IsNullOrWhiteSpace(blobContainerName))
+        {
+            throw new InvalidOperationException(
+                "Azure:BlobStorage:ContainerName must be configured.");
+        }
+
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
         services.AddIdentityCore<IdentityUser>(options =>
             {
@@ -72,9 +86,17 @@ public static class DependencyInjection
         services.Decorate(typeof(ICommandHandler<,>), typeof(ValidationBehavior.CommandHandler<,>));
         // services.Decorate(typeof(ICommandHandler<>), typeof(ValidationBehavior.CommandBaseHandler<>));
 
+        // ValidationBehavior resolves IEnumerable<IValidator<T>>. Without this scan every
+        // Features/*/Validator is never registered and its rules are silently skipped.
+        // includeInternalTypes matches the slices, whose validators are internal nested classes.
+        services.AddValidatorsFromAssembly(
+            Assembly.GetExecutingAssembly(),
+            includeInternalTypes: true);
+
         services.AddEndpoints(Assembly.GetExecutingAssembly());
 
         services.AddSingleton(new JwtTokenService(jwtKey, jwtIssuer, jwtAudience, jwtExpirationMinutes));
+        services.AddSingleton(new DocumentStorage(blobConnectionString, blobContainerName));
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>

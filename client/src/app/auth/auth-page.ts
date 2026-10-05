@@ -12,6 +12,7 @@ import {
 } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { finalize } from 'rxjs';
+import { flattenProblemDetails } from '../shared/problem-details';
 import { AuthService } from './auth.service';
 
 type AuthMode = 'login' | 'register';
@@ -108,26 +109,9 @@ export class AuthPage {
         return 'Could not reach the server. Check that the API is running.';
       }
 
-      const body: unknown = error.error;
-      if (typeof body === 'object' && body !== null) {
-        const problem = body as Record<string, unknown>;
-        const errors = problem['errors'];
-        if (typeof errors === 'object' && errors !== null) {
-          const messages = Object.values(errors).flatMap((value) =>
-            Array.isArray(value)
-              ? value.filter((item): item is string => typeof item === 'string')
-              : [],
-          );
-          if (messages.length > 0) {
-            return messages.join(' ');
-          }
-        }
-        if (typeof problem['detail'] === 'string') {
-          return problem['detail'];
-        }
-        if (typeof problem['title'] === 'string') {
-          return problem['title'];
-        }
+      const message = flattenProblemDetails(error.error);
+      if (message) {
+        return message;
       }
 
       if (error.status === 401) {

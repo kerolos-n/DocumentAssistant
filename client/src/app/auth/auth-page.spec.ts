@@ -117,6 +117,10 @@ describe('AuthPage', () => {
     await fixture.whenStable();
 
     expect(TestBed.inject(Router).url).toBe('/my-documents');
+    // The /my-documents route loads the document list as soon as it activates.
+    httpTesting
+      .match(`${env.API_URL}/api/documents`)
+      .forEach((request) => request.flush([]));
     expect(JSON.parse(localStorage.getItem('document-assistant.auth') ?? '{}')).toMatchObject({
       email: 'reader@example.com',
     });
