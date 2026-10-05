@@ -3,6 +3,7 @@ import { AuthPage } from './auth/auth-page';
 import { authGuard, guestGuard, homeGuard } from './auth/auth.guards';
 import { DocumentsPage } from './documents/documents-page';
 import { HomePage } from './home/home-page';
+import { NotFoundPage } from './not-found/not-found-page';
 import { AskPage } from './questions/ask-page';
 
 export const routes: Routes = [
@@ -16,4 +17,6 @@ export const routes: Routes = [
     children: [{ path: '', component: DocumentsPage }],
   },
   { path: 'ask', component: AskPage, canActivate: [authGuard] },
+  // Catch-all: must stay last, it matches whatever the routes above did not.
+  { path: '**', component: NotFoundPage },
 ];
