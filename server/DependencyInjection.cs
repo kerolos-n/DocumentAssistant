@@ -76,7 +76,9 @@ public static class DependencyInjection
         // UseVector teaches Npgsql to read and write the `vector` type that DocumentChunk.Embedding
         // maps to; without it, inserts fail at runtime rather than at startup.
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseNpgsql(connectionString, npgsql => npgsql.UseVector()));
+            options.UseNpgsql(connectionString, npgsql => npgsql
+                .UseVector()
+                .EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorCodesToAdd: null)));
         services.AddIdentityCore<IdentityUser>(options =>
             {
                 options.User.RequireUniqueEmail = true;

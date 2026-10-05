@@ -21,6 +21,10 @@ builder.Services.AddAllServices(builder.Configuration);
 
 var app = builder.Build();
 
+// Before the pipeline and before the host starts its hosted services, so the ingestion worker's
+// startup re-queue always finds its tables.
+await app.ApplyMigrationsAsync();
+
 // First in the pipeline, so every request gets a correlation id and its logs and outcome timing
 // stay together — including the exception handler's logs.
 app.UseMiddleware<CorrelationIdMiddleware>();

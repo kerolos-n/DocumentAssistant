@@ -36,9 +36,10 @@ dotnet watch                 # hot reload
 dotnet run                   # once (uses the `http` profile)
 dotnet build
 dotnet ef migrations add <Name>    # EF Core; needs the .env connection string
-dotnet ef database update          # apply migrations (the app never migrates on boot); the
-                                   # migration runs CREATE EXTENSION vector, so the Postgres
-                                   # server must ship pgvector (e.g. the pgvector/pgvector image)
+dotnet ef database update          # apply migrations by hand; normally unnecessary, because
+                                   # startup applies them (the migration runs CREATE EXTENSION
+                                   # vector, so the Postgres server must ship pgvector — e.g.
+                                   # the pgvector/pgvector image)
 ```
 The root `.vscode/tasks.json` has `Run Full Project` to start both in parallel.
 
@@ -73,7 +74,8 @@ exists but is gitignored and referenced nowhere.
 ## Server architecture
 
 `Program.cs` is now a thin bootstrap: load `.env` → `AddAllServices` →
-`CorrelationIdMiddleware` → `UseExceptionHandler` → `UseCors` / `UseAuthentication` /
+`ApplyMigrationsAsync` → `CorrelationIdMiddleware` → `UseExceptionHandler` → `UseCors` /
+`UseAuthentication` /
 `UseRateLimiter` / `UseAuthorization` → `MapGet("/")`, `MapEndpoints()`, and the `/health`
 JSON writer. Routes are **not** declared there anymore. The rate limiter sits _after_
 authentication on purpose: its per-user partition reads the `NameIdentifier` claim, which is only
@@ -174,8 +176,11 @@ populated once the bearer token is validated.
   `sub`/`email`/`jti` claims and returns `TokenResponse` (`Common/Auth/`) —
   `{ AccessToken, ExpiresAtUtc, UserId, Email }`, serialized camelCase.
 - **`Data/ApplicationDbContext.cs`** — `IdentityDbContext<IdentityUser>` over `Documents` and
-  `DocumentChunks`; migrations live in `Data/Migrations/`. Nothing calls `Database.Migrate()`, so
-  apply schema with `dotnet ef database update` before running. It declares the `vector` extension
+  `DocumentChunks`; migrations live in `Data/Migrations/`. `Program.cs` calls
+  `ApplyMigrationsAsync` (`Extensions/MigrationExtensions.cs`) right after `builder.Build()` and
+  before `app.Run()`, so pending migrations land before the host starts its hosted services — that
+  ordering is what keeps the ingestion worker's startup re-queue from querying a missing table. A
+  migration failure propagates and the app refuses to start. It declares the `vector` extension
   and maps `DocumentChunk.Embedding` as a `vector(1536)` column, so `AddDbContext` must keep
   `npgsql => npgsql.UseVector()` — without it Npgsql cannot read the type and inserts fail at
   runtime, not at startup. `Document.Status` is a `DocumentStatus` enum stored as text with a
