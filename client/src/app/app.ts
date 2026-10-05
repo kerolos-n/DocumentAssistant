@@ -1,6 +1,8 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { httpResource } from '@angular/common/http';
 import { RouterOutlet } from '@angular/router';
+import { AuthService } from './auth/auth.service';
+import env from '../environments/environment';
 
 /** Shape of the JSON returned by the server's `/health` endpoint. */
 interface HealthReport {
@@ -16,10 +18,9 @@ interface HealthReport {
   templateUrl: './app.html',
 })
 export class App {
-  protected readonly title = signal('client');
+  protected readonly auth = inject(AuthService);
 
-  /** Base URL of the ASP.NET Core server (see server/Properties/launchSettings.json). */
-  private readonly healthUrl = 'http://localhost:3000/health';
+  private readonly healthUrl = `${env.API_URL}/health`;
 
   protected readonly health = httpResource<HealthReport>(() => this.healthUrl);
 

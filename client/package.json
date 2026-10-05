@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "start": "node scripts/generate-env.mjs && ng serve",
+    "build": "node scripts/generate-env.mjs && ng build",
+    "watch": "node scripts/generate-env.mjs && ng build --watch --configuration development",
+    "test": "node scripts/generate-env.mjs && ng test"
   },
   "private": true,
   "packageManager": "npm@12.1.0",
@@ -25,6 +25,7 @@
     "@angular/cli": "^22.2.1",
     "@angular/compiler-cli": "^22.2.0",
     "@tailwindcss/postcss": "^4.1.12",
+    "dotenv": "^18.0.5",
     "jsdom": "^30.0.0",
     "postcss": "^8.5.3",
     "prettier": "^3.8.1",

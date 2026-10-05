@@ -2,16 +2,15 @@
 
 A simple AI knowledge base (RAG). Users register and log in, upload documents (PDF, DOCX, MD, TXT), and ask questions that are answered from their own documents, with citations. This is a portfolio project, so **simplicity and clarity beat feature count**.
 
+Only accounts/auth exist today (register, login, `/api/me`). Document upload and Q&A are not built yet.
+
 ## Docs: use Context7, not memory
 
-Angular 22 and .NET 10 are newer than most training data. Before writing code against either
-framework's APIs, look them up with the Context7 MCP server: `resolve-library-id`, then `query-docs`
-with the returned `/org/project` ID — one concept per call. Skip it for this repo's own logic.
+Angular 22, .NET 10, EF Core 10, and ASP.NET Core Identity are newer than most training data. Before writing code against any of them, look them up with the Context7 MCP server: `resolve-library-id`, then `query-docs` with the returned `/org/project` ID — one concept per call. Skip it for this repo's own logic.
 
 ## Layout
 
-Two independent apps, no root package manager or solution file: `client/` (Angular 22, standalone
-components, TypeScript 6, Tailwind v4) and `server/` (ASP.NET Core minimal API, `net10.0`).
+Two independent apps, no root package manager or solution file: `client/` (Angular 22, standalone components, TypeScript 6, Tailwind v4) and `server/` (ASP.NET Core minimal API, `net10.0`, EF Core + Npgsql/PostgreSQL, ASP.NET Core Identity, JWT bearer auth).
 
 ## Commands
 
@@ -20,6 +19,7 @@ components, TypeScript 6, Tailwind v4) and `server/` (ASP.NET Core minimal API, 
 npm install
 npm start                    # ng serve
 npm run build                # ng build
+npm run watch                # ng build --watch (development)
 npm test -- --watch=false    # Vitest (jsdom); watch is the default in a TTY
 npm test -- --filter "^App"                    # single suite/test by regex
 npm test -- --include src/app/app.spec.ts      # single file
@@ -29,35 +29,99 @@ npx prettier --write .       # single quotes, printWidth 100, angular parser for
 dotnet watch                 # hot reload
 dotnet run                   # once (uses the `http` profile)
 dotnet build
+dotnet ef migrations add <Name>    # EF Core; needs the .env connection string
+dotnet ef database update          # apply migrations (the app never migrates on boot)
 ```
+
+Each client npm script is prefixed with `node scripts/generate-env.mjs`, which is currently
+missing from the repo — see "Known gaps".
 
 The root `.vscode/tasks.json` has `Run Full Project` to start both in parallel.
 
-## Architecture
+## Configuration & secrets
 
-**Client ↔ server coupling.** The client calls the server at an absolute URL hardcoded in
-`client/src/app/app.ts` (`healthUrl`) — there is no `environment.ts`. The port lives in
-`server/Properties/launchSettings.json`, and the CORS origin in `server/Program.cs` (policy
-`client`, allowing only `http://localhost:4200`). Changing the server port or client origin means
-editing all three.
+**Server.** `Program.cs` loads `server/.env` (gitignored; template is `server/.env.example`)
+through DotNetEnv's `NoClobber()` _before_ the builder is created, walking up from the current
+directory to find `server/server.csproj`. Required keys: `ConnectionStrings__DefaultConnection`,
+`Jwt__Key` (≥32 bytes), `Jwt__Issuer`, `Jwt__Audience`, `Client__Origin`, `ASPNETCORE_URLS`.
+`AddAllServices` throws `InvalidOperationException` at startup when any is missing or too short, so
+a missing `.env` crashes `dotnet run` instead of starting a server. `appsettings.json` carries only
+non-secret defaults (Jwt `Issuer`/`Audience`/`ExpirationMinutes`, itself 60).
 
-**Server.** `Program.cs` is the entire API — top-level statements, no controllers or `Startup`
-class; add routes there with `app.MapGet`/`MapPost`. `GET /health` wraps the built-in health-check
-middleware (`AddHealthChecks` + `MapHealthChecks`) with a JSON `ResponseWriter`. Note it returns
-**503 when unhealthy**, so the client sees a failed request, never a readable `"Unhealthy"` body.
+**Client.** The API base URL is `client/src/environments/environment.ts`, a default export
+`{ API_URL }` — import it as `import env from '../environments/environment'`. There is no
+`injection token`; components read `env.API_URL` directly. `client/public/runtime-config.json`
+exists but is gitignored and referenced nowhere.
 
-**Client.** Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers go in
-`src/app/app.config.ts` (`provideHttpClient(withFetch())`, `provideRouter`). Fetch data with the
-signal-based `httpResource` from `@angular/common/http` — expose `isLoading()`/`error()`/`value()`
-through a `computed()` — rather than manual `HttpClient.subscribe`. `app.routes.ts` is empty.
-Tailwind v4 is configured in CSS (`@import 'tailwindcss'` in `src/styles.css`, PostCSS bridge in
-`.postcssrc.json`); there is no `tailwind.config.js`.
+**Coupling.** Changing host/port/origin means editing three places: the server port in
+`server/Properties/launchSettings.json`, the allowed browser origin in `Client__Origin` (default
+`http://localhost:4200`), and the client base URL in `environment.ts`.
 
-**Tests.** Colocated `*.spec.ts`, run by Vitest via `@angular/build:unit-test` in jsdom. Any
-component using `httpResource`/`HttpClient` needs both `provideHttpClient()` and
-`provideHttpClientTesting()` in the `TestBed` providers or the suite won't compile. The
-`client/.vscode/launch.json` `ng test` entry still points at the old Karma debug URL (`:9876`) and
-does not apply.
+## Server architecture
 
-**Git.** `.gitignore` exists only at the repo root — the generated `client/.gitignore` was removed,
-so root patterns are what exclude `client/node_modules`, `client/dist`, and `client/.angular`.
+`Program.cs` is now a thin bootstrap: load `.env` → `AddAllServices` → `UseCors` /
+`UseAuthentication` / `UseAuthorization` → `MapGet("/")`, `MapEndpoints()`, and the `/health`
+JSON writer. Routes are **not** declared there anymore.
+
+- **`DependencyInjection.cs`** — `AddAllServices` is the composition root: DbContext, Identity,
+  CQRS handler registrations, endpoint discovery, JWT bearer auth, CORS. Note it calls
+  `AddEndpoints(...)` twice (harmless — `TryAddEnumerable` dedupes — but redundant).
+- **Vertical slices** under `Features/<Area>/<UseCase>.cs`. Each file holds a `Command`/`Query`
+  record, a `Handler`, and a public `sealed class Endpoint : IEndpoint`. Auth slices:
+  `POST /api/auth/register`, `POST /api/auth/login`, and `GET /api/me` (`RequireAuthorization()`).
+- **`Common/Endpoints/IEndpoint.cs`** — implement `void MapEndpoint(IEndpointRouteBuilder)`.
+  `Extensions/EndpointExtensions.cs` reflects over the assembly at startup, registers every
+  implementation as a transient, and `MapEndpoints()` invokes them. Adding an endpoint = adding a
+  class; no edit to `Program.cs`.
+- **`Common/CQRS/`** — `ICommand`, `ICommand<TResponse>`, `ICommandHandler<>`/`ICommandHandler<,>`,
+  `IQuery<TResponse>`, `IQueryHandler<,>`. **Their namespace is `RealTimeChatAPI.Common.Messaging`,
+  not `DocumentAssistant.Common.CQRS`** (copied from another project) — import that odd namespace.
+  Handlers are registered by hand in `DependencyInjection.cs`, not auto-scanned. `IQuery` /
+  `IQueryHandler` are unused so far.
+- **`Services/JwtTokenService.cs`** — singleton; HMAC-SHA256, enforces the 32-byte key. Emits
+  `sub`/`email`/`jti` claims and returns `TokenResponse` (`Common/Auth/`) —
+  `{ AccessToken, ExpiresAtUtc, UserId, Email }`, serialized camelCase.
+- **`Data/ApplicationDbContext.cs`** — `IdentityDbContext<IdentityUser>`; migrations live in
+  `Data/Migrations/`. Nothing calls `Database.Migrate()`, so apply schema with
+  `dotnet ef database update` before running.
+- **Auth contract.** Bad login → `401`. Invalid register input → `ValidationProblem` (`400` with an
+  `errors` dictionary). Tokens validate with `NameClaimType = ClaimTypes.NameIdentifier`, mapped
+  inbound claims, and a 30 s clock skew.
+- **`/health`** wraps the built-in health-check middleware and returns **503 when unhealthy**, so
+  the client sees a failed request, never a readable `"Unhealthy"` body.
+
+## Client architecture
+
+Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers go in
+`src/app/app.config.ts`: `provideBrowserGlobalErrorListeners()`, `provideRouter(routes)`, and
+`provideHttpClient(withFetch(), withInterceptors([authInterceptor]))`.
+
+- `app.routes.ts` has one route: `''` → `AuthPage`. The `App` shell renders the health status plus
+  the signed-in email and a sign-out button.
+- `auth/auth.service.ts` (`providedIn: 'root'`) holds the `AuthSession` in a signal and mirrors it
+  to `localStorage` under `document-assistant.auth`; it validates shape and expiry on restore and
+  clears an expired session. Exposes `register` / `login` / `getCurrentUser` / `logout`.
+- `auth/auth.interceptor.ts` attaches `Authorization: Bearer <token>` to requests whose URL starts
+  with `${env.API_URL}/api/`.
+- `auth/auth-page.ts` + `auth-page.html` — one component toggling login/register modes with
+  reactive forms; it flattens server ProblemDetails `errors`/`detail` into a single error message.
+- Fetch data with the signal-based `httpResource` where a GET fits (see `App.health`, exposed
+  through a `computed()`); auth flows use `HttpClient` + RxJS because they are imperative commands.
+- Tailwind v4 is configured in CSS (`@import 'tailwindcss'` in `src/styles.css`, PostCSS bridge in
+  `.postcssrc.json`); there is no `tailwind.config.js`.
+
+## Tests
+
+Colocated `*.spec.ts`, run by Vitest via `@angular/build:unit-test` in jsdom. Any component using
+`httpResource`/`HttpClient` needs both `provideHttpClient()` and `provideHttpClientTesting()` in the
+`TestBed` providers or the suite won't compile; `App` also needs `provideRouter(routes)`, and the
+auth specs need `provideHttpClient(withInterceptors([authInterceptor]))`. Both auth specs attempt to
+redirect the API URL via `{ provide: env.API_URL, useValue: ... }`, but `env.API_URL` is a plain
+string read at module scope, so that provider is inert. The `client/.vscode/launch.json` `ng test`
+entry still points at the old Karma debug URL (`:9876`) and does not apply.
+
+## Git
+
+Root `.gitignore` is the only one — the generated `client/.gitignore` does not exist, though a
+comment in the root file still claims it does. It excludes `.env`, `client/public/runtime-config.json`,
+`.vscode/`, and `.claude/settings.local.json`.

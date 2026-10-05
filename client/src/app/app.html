@@ -1,7 +1,23 @@
-<main>
-  <h1>Document Assistant</h1>
-
-  <p role="status">{{ healthMessage() }}</p>
-
-  <router-outlet />
+<main class="min-h-screen bg-slate-50 px-4 py-8 text-slate-900">
+  <div class="mx-auto max-w-5xl">
+    <header
+      class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5"
+    >
+      <h1 class="text-2xl font-bold">Document Assistant</h1>
+      <div class="flex items-center gap-4">
+        <p class="text-sm text-slate-600" role="status">{{ healthMessage() }}</p>
+        @if (auth.session(); as session) {
+          <span class="hidden text-sm text-slate-600 sm:inline">{{ session.email }}</span>
+          <button
+            class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-white"
+            type="button"
+            (click)="auth.logout()"
+          >
+            Sign out
+          </button>
+        }
+      </div>
+    </header>
+    <router-outlet />
+  </div>
 </main>

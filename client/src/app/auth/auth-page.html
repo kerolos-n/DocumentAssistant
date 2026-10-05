@@ -1,0 +1,129 @@
+<section
+  class="mx-auto mt-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+>
+  <div class="mb-6">
+    <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">
+      Your private library
+    </p>
+    <h2 class="mt-2 text-2xl font-bold text-slate-900">
+      {{ isRegistering() ? 'Create your account' : 'Welcome back' }}
+    </h2>
+    <p class="mt-2 text-sm text-slate-600">
+      {{
+        isRegistering()
+          ? 'Register to start building your knowledge base.'
+          : 'Sign in to continue to your documents.'
+      }}
+    </p>
+  </div>
+
+  <div class="mb-6 grid grid-cols-2 rounded-lg bg-slate-100 p-1" aria-label="Account access">
+    <button
+      type="button"
+      class="rounded-md px-3 py-2 text-sm font-medium"
+      [class.bg-white]="!isRegistering()"
+      [class.shadow-sm]="!isRegistering()"
+      [attr.aria-pressed]="!isRegistering()"
+      (click)="setMode('login')"
+    >
+      Sign in
+    </button>
+    <button
+      type="button"
+      class="rounded-md px-3 py-2 text-sm font-medium"
+      [class.bg-white]="isRegistering()"
+      [class.shadow-sm]="isRegistering()"
+      [attr.aria-pressed]="isRegistering()"
+      (click)="setMode('register')"
+    >
+      Register
+    </button>
+  </div>
+
+  <form class="space-y-4" [formGroup]="form" (ngSubmit)="submit()">
+    <div>
+      <label class="mb-1 block text-sm font-medium text-slate-700" for="email">Email</label>
+      <input
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+        id="email"
+        type="email"
+        autocomplete="email"
+        formControlName="email"
+        required
+      />
+      @if (form.controls.email.touched && form.controls.email.invalid) {
+        <p class="mt-1 text-sm text-red-700">Enter a valid email address.</p>
+      }
+    </div>
+
+    <div>
+      <label class="mb-1 block text-sm font-medium text-slate-700" for="password">Password</label>
+      <input
+        class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+        id="password"
+        type="password"
+        [attr.autocomplete]="isRegistering() ? 'new-password' : 'current-password'"
+        formControlName="password"
+        required
+        minlength="8"
+      />
+      @if (form.controls.password.touched && form.controls.password.invalid) {
+        <p class="mt-1 text-sm text-red-700">Use at least 8 characters.</p>
+      }
+      @if (isRegistering()) {
+        <p class="mt-1 text-xs text-slate-500">
+          Include an uppercase letter, lowercase letter, number, and symbol.
+        </p>
+      }
+    </div>
+
+    @if (isRegistering()) {
+      <div>
+        <label class="mb-1 block text-sm font-medium text-slate-700" for="confirm-password">
+          Confirm password
+        </label>
+        <input
+          class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+          id="confirm-password"
+          type="password"
+          autocomplete="new-password"
+          formControlName="confirmPassword"
+          required
+        />
+      </div>
+    }
+
+    @if (errorMessage(); as error) {
+      <p class="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{{ error }}</p>
+    }
+    @if (successMessage(); as message) {
+      <p class="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
+        {{ message }}
+      </p>
+    }
+
+    <button
+      class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+      type="submit"
+      [disabled]="isSubmitting()"
+    >
+      {{ isSubmitting() ? 'Please wait…' : isRegistering() ? 'Create account' : 'Sign in' }}
+    </button>
+  </form>
+
+  @if (authSession()) {
+    <div class="mt-5 border-t border-slate-200 pt-5">
+      <button
+        class="text-sm font-semibold text-indigo-700 hover:text-indigo-900 disabled:opacity-60"
+        type="button"
+        [disabled]="isSubmitting()"
+        (click)="verifyProtectedAccess()"
+      >
+        Verify protected API access
+      </button>
+      @if (currentUser(); as user) {
+        <p class="mt-2 text-sm text-slate-600">Authenticated as {{ user.email }}.</p>
+      }
+    </div>
+  }
+</section>

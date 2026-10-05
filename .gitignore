@@ -14,6 +14,7 @@ bazel-out/
 .angular/
 .sass-cache/
 coverage/
+client/public/runtime-config.json
 libpeerconnection.log
 testem.log
 typings/

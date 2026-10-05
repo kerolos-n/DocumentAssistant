@@ -1,22 +1,31 @@
 using System.Text.Json;
+using DocumentAssistant.Extensions;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using DocumentAssistant;
+
+var repositoryDirectory = new DirectoryInfo(Directory.GetCurrentDirectory());
+while (repositoryDirectory is not null && !File.Exists(Path.Combine(repositoryDirectory.FullName, "server", "server.csproj")))
+{
+    repositoryDirectory = repositoryDirectory.Parent;
+}
+
+var envFilePath = Path.Combine(repositoryDirectory?.FullName ?? Directory.GetCurrentDirectory(), "server", ".env");
+if (File.Exists(envFilePath))
+{
+    DotNetEnv.Env.NoClobber().Load(envFilePath);
+}
 
 var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddHealthChecks();
-
-// The Angular dev server runs on a different origin, so the browser enforces CORS.
-const string ClientDevOrigin = "http://localhost:4200";
-builder.Services.AddCors(options => options.AddPolicy("client", policy => policy
-    .WithOrigins(ClientDevOrigin)
-    .AllowAnyHeader()
-    .AllowAnyMethod()));
+builder.Services.AddAllServices(builder.Configuration);
 
 var app = builder.Build();
 
 app.UseCors("client");
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapGet("/", () => "Hello World!");
+app.MapEndpoints();
 
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
