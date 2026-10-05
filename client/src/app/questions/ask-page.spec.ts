@@ -5,6 +5,7 @@ import { provideRouter } from '@angular/router';
 import env from '../../environments/environment';
 import { routes } from '../app.routes';
 import { authInterceptor } from '../auth/auth.interceptor';
+import { DocumentSummary } from '../documents/documents.service';
 import { AskPage } from './ask-page';
 import { Answer } from './questions.service';
 
@@ -12,6 +13,7 @@ describe('AskPage', () => {
   let httpTesting: HttpTestingController;
 
   const questionsUrl = `${env.API_URL}/api/questions`;
+  const documentsUrl = `${env.API_URL}/api/documents`;
 
   beforeEach(() => {
     localStorage.clear();
@@ -31,10 +33,29 @@ describe('AskPage', () => {
     localStorage.clear();
   });
 
-  function createPage(): { fixture: ComponentFixture<AskPage>; root: HTMLElement } {
+  function createPage(documents: DocumentSummary[] = []): {
+    fixture: ComponentFixture<AskPage>;
+    root: HTMLElement;
+  } {
     const fixture = TestBed.createComponent(AskPage);
     fixture.detectChanges();
+    // The sidebar reads the shared DocumentsService list, which loads on construction.
+    httpTesting.expectOne({ method: 'GET', url: documentsUrl }).flush(documents);
+    fixture.detectChanges();
     return { fixture, root: fixture.nativeElement as HTMLElement };
+  }
+
+  function sampleDocument(overrides: Partial<DocumentSummary> = {}): DocumentSummary {
+    return {
+      id: 'document-1',
+      fileName: 'handbook.pdf',
+      contentType: 'application/pdf',
+      sizeInBytes: 1024,
+      uploadedAtUtc: new Date().toISOString(),
+      status: 'Ready',
+      errorMessage: null,
+      ...overrides,
+    };
   }
 
   function questionInput(root: HTMLElement): HTMLTextAreaElement {
@@ -112,6 +133,16 @@ describe('AskPage', () => {
     expect(root.textContent).toContain('The handbook says it is available from launch.');
   });
 
+  it('lists the documents in the sidebar with a link to manage them', () => {
+    const { root } = createPage([sampleDocument({ fileName: 'handbook.pdf', status: 'Failed' })]);
+
+    expect(root.textContent).toContain('handbook.pdf');
+    expect(root.textContent).toContain('Failed');
+    expect(root.querySelector('a[href="/my-documents"]')?.textContent).toContain(
+      'Manage documents',
+    );
+  });
+
   it('shows the no-documents message with a link to upload', async () => {
     const { fixture, root } = createPage();
 
@@ -131,7 +162,7 @@ describe('AskPage', () => {
 
     expect(root.textContent).toContain('No documents to search yet');
     expect(root.textContent).toContain("You don't have any processed documents yet.");
-    expect(root.querySelector('a[href="/my-documents"]')).not.toBeNull();
+    expect(root.textContent).toContain('Upload a document');
   });
 
   it('shows the I-don-t-know message when nothing is relevant', async () => {
@@ -153,7 +184,8 @@ describe('AskPage', () => {
 
     expect(root.textContent).toContain('No answer found');
     expect(root.textContent).toContain("I don't know.");
-    expect(root.querySelector('a[href="/my-documents"]')).toBeNull();
+    // The no-relevant-context panel has no upload call to action (the sidebar link is separate).
+    expect(root.textContent).not.toContain('Upload a document');
   });
 
   it('shows an error state when the assistant is unavailable', async () => {

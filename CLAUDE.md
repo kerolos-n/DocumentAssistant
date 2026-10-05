@@ -183,14 +183,20 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
 `src/app/app.config.ts`: `provideBrowserGlobalErrorListeners()`, `provideRouter(routes)`, and
 `provideHttpClient(withFetch(), withInterceptors([authInterceptor]))`.
 
-- `app.routes.ts`: `/` is a componentless public home behind `homeGuard` (guests stay, signed-in
-  users go to `/my-documents`); `/my-documents` is a componentless shell behind `authGuard` (guests
+- `app.routes.ts`: `/` renders `HomePage` (the public landing page) behind `homeGuard` (guests stay,
+  signed-in users go to `/ask`); `/my-documents` is a componentless shell behind `authGuard` (guests
   go to `/auth`) whose default child renders `DocumentsPage`; `/ask` renders `AskPage` behind
   `authGuard`; `/auth` renders `AuthPage` behind
-  `guestGuard` (signed-in users go to `/my-documents`). All three guards live in
-  `auth/auth.guards.ts` and redirect on the session. The `App` shell shows Login / Register links
-  (`/auth`, the latter with `?mode=register`) to guests and the signed-in email plus a sign-out
-  button otherwise; signing out clears the session and navigates to `/`, which guests can view.
+  `guestGuard` (signed-in users go to `/ask`). All three guards live in
+  `auth/auth.guards.ts` and redirect on the session. The `App` shell is a sticky, responsive navbar:
+  a brand link on the left, account links inline from the `md` breakpoint up, and a hamburger button
+  that expands a mobile panel (state in a `menuOpen` signal; the panel unmounts when closed, so the
+  default DOM has one copy of each link). Guests get Login / Register (`/auth`, the latter with
+  `?mode=register`); signed-in users get Ask / My documents, their email, and a sign-out button;
+  signing out clears the session and navigates to `/`, which guests can view.
+- `home/home-page.ts` + `home-page.html` — the signed-out landing page: a hero, a three-step
+  upload/index/ask explainer, and call-to-action buttons to `/auth` and `/auth?mode=register`. No
+  HTTP calls, so its spec needs no flush.
 - `auth/auth.service.ts` (`providedIn: 'root'`) holds the `AuthSession` in a signal and mirrors it
   to `localStorage` under `document-assistant.auth`; it validates shape and expiry on restore and
   clears an expired session. Exposes `register` / `login` / `getCurrentUser` / `logout`.
@@ -198,7 +204,7 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
   with `${env.API_URL}/api/`.
 - `auth/auth-page.ts` + `auth-page.html` — one component toggling login/register modes with
   reactive forms, seeded from the `?mode=register` query param; it flattens server ProblemDetails
-  `errors`/`detail` into a single error message and navigates to `/my-documents` after a successful
+  `errors`/`detail` into a single error message and navigates to `/ask` after a successful
   login or register.
 - `documents/documents.service.ts` (`providedIn: 'root'`) — the list lives in signals
   (`documents`, `isLoading`, `loadError`) and it exposes `reload` / `upload` / `delete` /
@@ -217,13 +223,19 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
   come from a `Record<DocumentStatus, string>` of _complete_ Tailwind class names (complete, not
   fragments, so Tailwind's scanner finds them in the `.ts` file); `Processing` also renders an
   `animate-spin` spinner, and `Failed` shows the server's reason inline and as a `title` tooltip.
-- `questions/questions.service.ts` (`providedIn: 'root'`) + `questions/ask-page.ts`/`.html` — one
-  POST to `/api/questions` returning `{ isAnswerable, outcome, answer, citations }`, with `outcome`
+- `questions/questions.service.ts` (`providedIn: 'root'`) + `questions/ask-page.ts`/`.html` — a
+  two-column layout that stacks on small screens and goes side-by-side from the `lg` breakpoint: a
+  narrow (sticky) left sidebar listing the user's documents (name, status dot, plus a "Manage
+  documents" link to `/my-documents`) and the chat on the right. The sidebar injects the shared
+  `DocumentsService` and reads its signals, so it inherits the same polled list — no second fetch
+  loop. The chat is one POST to `/api/questions` returning
+  `{ isAnswerable, outcome, answer, citations }`, with `outcome`
   (`Answered` / `NoDocuments` / `NoRelevantContext`) driving three distinct panels: the answer with
   its citations, an amber "no documents" card linking to `/my-documents`, and a neutral "no answer
   found" card. Submit is disabled while the input is blank or a request is in flight, and a `502`
-  (the assistant is down or timed out) renders the error alert. The page makes no request on load,
-  so its spec needs no initial flush.
+  (the assistant is down or timed out) renders the error alert. The chat itself makes no request on
+  load, but the sidebar's `DocumentsService` fires a `GET /api/documents`, so its spec flushes that
+  before asserting.
 - Prefer the signal-based `httpResource` where a GET fits (nothing uses it yet); the documents list
   and auth flows use `HttpClient` + RxJS because a resource registers a pending task that stops
   `fixture.whenStable()` resolving in the existing specs, and auth is imperative anyway. Polling

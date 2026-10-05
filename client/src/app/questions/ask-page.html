@@ -1,87 +1,141 @@
-<section class="mx-auto mt-10 w-full max-w-3xl space-y-6">
-  <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-    <div class="mb-6">
-      <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">Ask your library</p>
-      <h2 class="mt-2 text-2xl font-bold text-slate-900">Ask a question</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        Answers come from your own documents, with citations to where they were found.
-      </p>
-    </div>
-
-    <form (submit)="$event.preventDefault(); ask()">
-      <label class="mb-1 block text-sm font-medium text-slate-700" for="question">Question</label>
-      <textarea
-        class="block w-full rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-        id="question"
-        rows="3"
-        placeholder="What do my documents say about…?"
-        [value]="question()"
-        (input)="onQuestionInput($event)"
-      ></textarea>
-
-      <button
-        class="mt-4 w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-        id="ask-question"
-        type="submit"
-        [disabled]="!canSubmit()"
-      >
-        {{ isLoading() ? 'Thinking…' : 'Ask' }}
-      </button>
-    </form>
-  </div>
-
-  @if (isLoading()) {
-    <div class="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600 shadow-sm">
-      Searching your documents and drafting an answer…
-    </div>
-  } @else if (errorMessage(); as error) {
-    <div
-      class="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800 shadow-sm"
-      role="alert"
-    >
-      {{ error }}
-    </div>
-  } @else if (answer(); as result) {
-    @if (result.outcome === 'NoDocuments') {
-      <div class="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-        <h3 class="font-semibold text-amber-900">No documents to search yet</h3>
-        <p class="mt-2 text-sm text-amber-800">{{ result.answer }}</p>
-        <a
-          class="mt-4 inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-          routerLink="/my-documents"
-        >
-          Upload a document
-        </a>
-      </div>
-    } @else if (result.outcome === 'NoRelevantContext') {
-      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
-        <h3 class="font-semibold text-slate-800">No answer found</h3>
-        <p class="mt-2 text-sm text-slate-600">{{ result.answer }}</p>
-      </div>
-    } @else {
-      <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h3 class="text-lg font-semibold text-slate-900">Answer</h3>
-        <p class="mt-3 whitespace-pre-line text-slate-800">{{ result.answer }}</p>
+<div class="mt-4 flex w-full flex-col gap-6 lg:flex-row lg:items-start">
+  <aside class="w-full lg:sticky lg:top-24 lg:w-72 lg:shrink-0">
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Your documents
+        </h2>
+        <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+          {{ documents().length }}
+        </span>
       </div>
 
-      @if (result.citations.length > 0) {
-        <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h3 class="text-lg font-semibold text-slate-900">Citations</h3>
-          <ol class="mt-4 space-y-4">
-            @for (citation of result.citations; track $index) {
-              <li class="border-l-2 border-indigo-200 pl-4">
-                <p class="text-sm font-medium text-slate-900">
-                  {{ citation.fileName }}
-                  @if (citation.pageNumber !== null) {
-                    <span class="text-slate-500">· page {{ citation.pageNumber }}</span>
-                  }
+      @if (isLoadingDocuments()) {
+        <p class="mt-3 text-sm text-slate-500">Loading…</p>
+      } @else if (documentsError()) {
+        <p class="mt-3 text-sm text-red-700" role="alert">Could not load your documents.</p>
+      } @else if (documents().length === 0) {
+        <p class="mt-3 text-sm text-slate-500">
+          No documents yet. Add one to start asking questions.
+        </p>
+      } @else {
+        <ul class="mt-3 space-y-2 overflow-y-auto lg:max-h-96">
+          @for (document of documents(); track document.id) {
+            <li class="flex items-start gap-2.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+              <span
+                class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                [class]="statusDotClasses[document.status]"
+                [attr.title]="document.errorMessage"
+                aria-hidden="true"
+              ></span>
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium text-slate-800" [attr.title]="document.fileName">
+                  {{ document.fileName }}
                 </p>
-                <p class="mt-1 text-sm text-slate-600">{{ citation.snippet }}</p>
-              </li>
-            }
-          </ol>
+                <p class="text-xs text-slate-500">{{ document.status }}</p>
+              </div>
+            </li>
+          }
+        </ul>
+      }
+
+      <a
+        class="mt-4 flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+        routerLink="/my-documents"
+      >
+        Manage documents
+        <span aria-hidden="true">→</span>
+      </a>
+    </div>
+  </aside>
+
+  <section class="min-w-0 flex-1 space-y-6">
+    <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div class="mb-6">
+        <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">
+          Ask your library
+        </p>
+        <h2 class="mt-2 text-2xl font-bold text-slate-900">Ask a question</h2>
+        <p class="mt-2 text-sm text-slate-600">
+          Answers come from your own documents, with citations to where they were found.
+        </p>
+      </div>
+
+      <form (submit)="$event.preventDefault(); ask()">
+        <label class="mb-1 block text-sm font-medium text-slate-700" for="question">Question</label>
+        <textarea
+          class="block w-full rounded-lg border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+          id="question"
+          rows="3"
+          placeholder="What do my documents say about…?"
+          [value]="question()"
+          (input)="onQuestionInput($event)"
+        ></textarea>
+
+        <button
+          class="mt-4 w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          id="ask-question"
+          type="submit"
+          [disabled]="!canSubmit()"
+        >
+          {{ isLoading() ? 'Thinking…' : 'Ask' }}
+        </button>
+      </form>
+    </div>
+
+    @if (isLoading()) {
+      <div class="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600 shadow-sm">
+        Searching your documents and drafting an answer…
+      </div>
+    } @else if (errorMessage(); as error) {
+      <div
+        class="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800 shadow-sm"
+        role="alert"
+      >
+        {{ error }}
+      </div>
+    } @else if (answer(); as result) {
+      @if (result.outcome === 'NoDocuments') {
+        <div class="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+          <h3 class="font-semibold text-amber-900">No documents to search yet</h3>
+          <p class="mt-2 text-sm text-amber-800">{{ result.answer }}</p>
+          <a
+            class="mt-4 inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            routerLink="/my-documents"
+          >
+            Upload a document
+          </a>
         </div>
+      } @else if (result.outcome === 'NoRelevantContext') {
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
+          <h3 class="font-semibold text-slate-800">No answer found</h3>
+          <p class="mt-2 text-sm text-slate-600">{{ result.answer }}</p>
+        </div>
+      } @else {
+        <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+          <h3 class="text-lg font-semibold text-slate-900">Answer</h3>
+          <p class="mt-3 whitespace-pre-line text-slate-800">{{ result.answer }}</p>
+        </div>
+
+        @if (result.citations.length > 0) {
+          <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+            <h3 class="text-lg font-semibold text-slate-900">Citations</h3>
+            <ol class="mt-4 space-y-4">
+              @for (citation of result.citations; track $index) {
+                <li class="border-l-2 border-indigo-200 pl-4">
+                  <p class="text-sm font-medium text-slate-900">
+                    {{ citation.fileName }}
+                    @if (citation.pageNumber !== null) {
+                      <span class="text-slate-500">· page {{ citation.pageNumber }}</span>
+                    }
+                  </p>
+                  <p class="mt-1 text-sm text-slate-600">{{ citation.snippet }}</p>
+                </li>
+              }
+            </ol>
+          </div>
+        }
       }
     }
-  }
-</section>
+  </section>
+</div>

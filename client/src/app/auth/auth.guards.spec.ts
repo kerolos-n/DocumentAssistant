@@ -43,12 +43,12 @@ describe('auth guards', () => {
     expect(result).toBe(true);
   });
 
-  it('guestGuard sends signed-in users to /my-documents', () => {
+  it('guestGuard sends signed-in users to /ask', () => {
     signIn();
     configure();
     const result = TestBed.runInInjectionContext(() => guestGuard({} as never, {} as never));
     expect(result).toBeInstanceOf(UrlTree);
-    expect((result as UrlTree).toString()).toBe('/my-documents');
+    expect((result as UrlTree).toString()).toBe('/ask');
   });
 
   it('guestGuard lets signed-out visitors through', () => {
@@ -63,11 +63,11 @@ describe('auth guards', () => {
     expect(result).toBe(true);
   });
 
-  it('homeGuard sends signed-in users to /my-documents', () => {
+  it('homeGuard sends signed-in users to /ask', () => {
     signIn();
     configure();
     const result = TestBed.runInInjectionContext(() => homeGuard({} as never, {} as never));
     expect(result).toBeInstanceOf(UrlTree);
-    expect((result as UrlTree).toString()).toBe('/my-documents');
+    expect((result as UrlTree).toString()).toBe('/ask');
   });
 });

@@ -2,6 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
+import { DocumentsService, DocumentStatus } from '../documents/documents.service';
 import { flattenProblemDetails } from '../shared/problem-details';
 import { Answer, QuestionsService } from './questions.service';
 
@@ -12,11 +13,27 @@ import { Answer, QuestionsService } from './questions.service';
 })
 export class AskPage {
   private readonly questionsService = inject(QuestionsService);
+  private readonly documentsService = inject(DocumentsService);
+
+  /** The documents sidebar reads the shared, polled list owned by DocumentsService. */
+  protected readonly documents = this.documentsService.documents;
+  protected readonly isLoadingDocuments = this.documentsService.isLoading;
+  protected readonly documentsError = this.documentsService.loadError;
 
   protected readonly question = signal('');
   protected readonly isLoading = signal(false);
   protected readonly answer = signal<Answer | null>(null);
   protected readonly errorMessage = signal<string | null>(null);
+
+  /**
+   * Status dot colours. Complete class names, not fragments, so Tailwind's scanner emits them.
+   */
+  protected readonly statusDotClasses: Readonly<Record<DocumentStatus, string>> = {
+    Pending: 'bg-amber-400',
+    Processing: 'bg-sky-400',
+    Ready: 'bg-emerald-500',
+    Failed: 'bg-red-500',
+  };
 
   /** A blank question is not worth a round trip, and a second submit while loading is a duplicate. */
   protected readonly canSubmit = computed(

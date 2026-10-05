@@ -32,10 +32,34 @@ describe('App', () => {
     fixture.detectChanges();
     const root = fixture.nativeElement as HTMLElement;
 
-    const links = Array.from(root.querySelectorAll('a'));
+    // Scope to the account nav: the public home page also carries call-to-action links.
+    const links = Array.from(root.querySelectorAll('nav[aria-label="Account"] a'));
     expect(links.map((link) => link.textContent?.trim())).toEqual(['Login', 'Register']);
     expect(links[0].getAttribute('href')).toBe('/auth');
     expect(links[1].getAttribute('href')).toContain('mode=register');
+  });
+
+  it('toggles the mobile navigation from the hamburger button', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.querySelector('#mobile-nav')).toBeNull();
+
+    const toggle = root.querySelector(
+      'button[aria-label="Toggle navigation"]',
+    ) as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    toggle.click();
+    fixture.detectChanges();
+
+    const mobileNav = root.querySelector('#mobile-nav');
+    expect(mobileNav).not.toBeNull();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(Array.from(mobileNav!.querySelectorAll('a')).map((link) => link.textContent?.trim())).toEqual(
+      ['Login', 'Register'],
+    );
   });
 
   it('clears the session and redirects home when signing out', async () => {

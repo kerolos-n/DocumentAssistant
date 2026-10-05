@@ -10,18 +10,18 @@ export const authGuard: CanActivateFn = () => {
   return auth.session() ? true : router.createUrlTree(['/auth']);
 };
 
-/** Keeps signed-in users out of the auth page. */
+/** Keeps signed-in users out of the auth page; /ask is the signed-in landing page. */
 export const guestGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const router = inject(Router);
 
-  return auth.session() ? router.createUrlTree(['/my-documents']) : true;
+  return auth.session() ? router.createUrlTree(['/ask']) : true;
 };
 
-/** Public home: guests stay here, signed-in users are sent to their documents. */
+/** Public home: guests stay here, signed-in users are sent to the ask page. */
 export const homeGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const router = inject(Router);
 
-  return auth.session() ? router.createUrlTree(['/my-documents']) : true;
+  return auth.session() ? router.createUrlTree(['/ask']) : true;
 };

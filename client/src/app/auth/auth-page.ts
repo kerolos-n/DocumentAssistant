@@ -95,7 +95,7 @@ export class AuthPage {
     this.isSubmitting.set(true);
     request.pipe(finalize(() => this.isSubmitting.set(false))).subscribe({
       next: () => {
-        void this.router.navigate(['/my-documents']);
+        void this.router.navigate(['/ask']);
       },
       error: (error: unknown) => {
         this.errorMessage.set(this.getErrorMessage(error));

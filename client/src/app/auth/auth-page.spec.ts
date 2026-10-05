@@ -84,7 +84,7 @@ describe('AuthPage', () => {
     expect(submitButton(root).disabled).toBe(false);
   });
 
-  it('registers an account and redirects to /my-documents', async () => {
+  it('registers an account and redirects to /ask', async () => {
     const fixture = TestBed.createComponent(AuthPage);
     fixture.detectChanges();
     const root = fixture.nativeElement as HTMLElement;
@@ -116,8 +116,8 @@ describe('AuthPage', () => {
     });
     await fixture.whenStable();
 
-    expect(TestBed.inject(Router).url).toBe('/my-documents');
-    // The /my-documents route loads the document list as soon as it activates.
+    expect(TestBed.inject(Router).url).toBe('/ask');
+    // The /ask route's sidebar loads the document list as soon as it activates.
     httpTesting
       .match(`${env.API_URL}/api/documents`)
       .forEach((request) => request.flush([]));

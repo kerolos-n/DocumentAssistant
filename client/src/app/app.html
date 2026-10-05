@@ -1,48 +1,156 @@
-<main class="min-h-screen bg-slate-50 px-4 py-8 text-slate-900">
-  <div class="mx-auto max-w-5xl">
-    <header
-      class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5"
+<div class="flex min-h-screen flex-col bg-slate-50 text-slate-900">
+  <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/80 backdrop-blur">
+    <div
+      class="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6"
     >
-      <h1 class="text-2xl font-bold">Document Assistant</h1>
-      <nav class="flex items-center gap-4" aria-label="Account">
-        @if (auth.session(); as session) {
-          <span class="hidden text-sm text-slate-600 sm:inline">{{ session.email }}</span>
-          <a
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-white"
-            routerLink="/my-documents"
+      <h1 class="text-lg font-bold tracking-tight">
+        <a class="flex items-center gap-2.5" routerLink="/">
+          <span
+            class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-sm font-bold text-white shadow-sm"
+            aria-hidden="true"
           >
-            My documents
-          </a>
+            DA
+          </span>
+          <span>Document Assistant</span>
+        </a>
+      </h1>
+
+      @if (auth.session(); as session) {
+        <nav class="hidden items-center gap-1 md:flex" aria-label="Account">
           <a
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-white"
+            class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
             routerLink="/ask"
+            routerLinkActive="bg-indigo-50 text-indigo-700"
           >
             Ask
           </a>
+          <a
+            class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            routerLink="/my-documents"
+            routerLinkActive="bg-indigo-50 text-indigo-700"
+          >
+            My documents
+          </a>
+          <span class="ml-2 hidden max-w-xs truncate text-sm text-slate-500 lg:inline">
+            {{ session.email }}
+          </span>
           <button
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-white"
+            class="ml-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
             type="button"
             (click)="signOut()"
           >
             Sign out
           </button>
-        } @else {
+        </nav>
+      } @else {
+        <nav class="hidden items-center gap-2 md:flex" aria-label="Account">
           <a
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-white"
+            class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
             routerLink="/auth"
           >
             Login
           </a>
           <a
-            class="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
             routerLink="/auth"
             [queryParams]="{ mode: 'register' }"
           >
             Register
           </a>
+        </nav>
+      }
+
+      <button
+        class="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 md:hidden"
+        type="button"
+        aria-label="Toggle navigation"
+        aria-controls="mobile-nav"
+        [attr.aria-expanded]="menuOpen()"
+        (click)="toggleMenu()"
+      >
+        @if (menuOpen()) {
+          <svg
+            aria-hidden="true"
+            class="h-6 w-6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        } @else {
+          <svg
+            aria-hidden="true"
+            class="h-6 w-6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
         }
+      </button>
+    </div>
+
+    @if (menuOpen()) {
+      <nav
+        class="border-t border-slate-200 bg-white/95 px-4 pb-4 pt-2 md:hidden"
+        id="mobile-nav"
+        aria-label="Mobile"
+      >
+        <div class="flex flex-col gap-1">
+          @if (auth.session(); as session) {
+            <p class="truncate px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+              {{ session.email }}
+            </p>
+            <a
+              class="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              routerLink="/ask"
+              (click)="closeMenu()"
+            >
+              Ask
+            </a>
+            <a
+              class="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              routerLink="/my-documents"
+              (click)="closeMenu()"
+            >
+              My documents
+            </a>
+            <button
+              class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              type="button"
+              (click)="signOut()"
+            >
+              Sign out
+            </button>
+          } @else {
+            <a
+              class="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              routerLink="/auth"
+              (click)="closeMenu()"
+            >
+              Login
+            </a>
+            <a
+              class="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-700"
+              routerLink="/auth"
+              [queryParams]="{ mode: 'register' }"
+              (click)="closeMenu()"
+            >
+              Register
+            </a>
+          }
+        </div>
       </nav>
-    </header>
-    <router-outlet />
-  </div>
-</main>
+    }
+  </header>
+
+  <main class="flex-1 px-4 py-8 sm:px-6">
+    <div class="mx-auto w-full max-w-6xl">
+      <router-outlet />
+    </div>
+  </main>
+</div>
