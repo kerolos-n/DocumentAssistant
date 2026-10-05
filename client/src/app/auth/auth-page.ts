@@ -1,10 +1,33 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import {
+  AbstractControl,
+  FormControl,
+  FormGroup,
+  ReactiveFormsModule,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { finalize } from 'rxjs';
-import { AuthService, CurrentUser } from './auth.service';
+import { AuthService } from './auth.service';
 
 type AuthMode = 'login' | 'register';
+
+/**
+ * Register mode only. An empty confirmation is left to the control's own
+ * `Validators.required`, so login mode — where the field is hidden — stays valid.
+ */
+const passwordsMatch: ValidatorFn = (form: AbstractControl): ValidationErrors | null => {
+  const password = form.get('password')?.value as string | undefined;
+  const confirmation = form.get('confirmPassword')?.value as string | undefined;
+  if (!confirmation) {
+    return null;
+  }
+  return password === confirmation ? null : { passwordsMismatch: true };
+};
 
 @Component({
   imports: [ReactiveFormsModule],
@@ -13,49 +36,56 @@ type AuthMode = 'login' | 'register';
 })
 export class AuthPage {
   private readonly authService = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
-  protected readonly authSession = this.authService.session;
   protected readonly mode = signal<AuthMode>('login');
   protected readonly isSubmitting = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
-  protected readonly successMessage = signal<string | null>(null);
-  protected readonly currentUser = signal<CurrentUser | null>(null);
   protected readonly isRegistering = computed(() => this.mode() === 'register');
 
-  protected readonly form = new FormGroup({
-    email: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.email],
-    }),
-    password: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.minLength(8)],
-    }),
-    confirmPassword: new FormControl('', { nonNullable: true }),
-  });
+  protected readonly form = new FormGroup(
+    {
+      email: new FormControl('', {
+        nonNullable: true,
+        validators: [Validators.required, Validators.email],
+      }),
+      password: new FormControl('', {
+        nonNullable: true,
+        validators: [Validators.required, Validators.minLength(8)],
+      }),
+      confirmPassword: new FormControl('', { nonNullable: true }),
+    },
+    { validators: [passwordsMatch] },
+  );
+
+  constructor() {
+    // The nav bar links here with ?mode=register to open straight on the register form.
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      this.setMode(params.get('mode') === 'register' ? 'register' : 'login');
+    });
+  }
 
   protected setMode(mode: AuthMode): void {
     this.mode.set(mode);
     this.errorMessage.set(null);
-    this.successMessage.set(null);
-    this.currentUser.set(null);
+    // Confirm is only required while registering; reset it so a value left over
+    // from the other mode cannot keep the form invalid.
+    this.form.controls.confirmPassword.setValidators(
+      mode === 'register' ? [Validators.required] : null,
+    );
+    this.form.controls.confirmPassword.reset('');
   }
 
   protected submit(): void {
     this.errorMessage.set(null);
-    this.successMessage.set(null);
-    this.currentUser.set(null);
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
     }
 
-    const { email, password, confirmPassword } = this.form.getRawValue();
-    if (this.isRegistering() && password !== confirmPassword) {
-      this.errorMessage.set('Passwords do not match.');
-      return;
-    }
+    const { email, password } = this.form.getRawValue();
 
     const request = this.isRegistering()
       ? this.authService.register(email, password)
@@ -63,27 +93,13 @@ export class AuthPage {
 
     this.isSubmitting.set(true);
     request.pipe(finalize(() => this.isSubmitting.set(false))).subscribe({
-      next: (session) => {
-        this.successMessage.set(`Signed in as ${session.email}.`);
+      next: () => {
+        void this.router.navigate(['/my-documents']);
       },
       error: (error: unknown) => {
         this.errorMessage.set(this.getErrorMessage(error));
       },
     });
-  }
-
-  protected verifyProtectedAccess(): void {
-    this.errorMessage.set(null);
-    this.currentUser.set(null);
-    this.isSubmitting.set(true);
-
-    this.authService
-      .getCurrentUser()
-      .pipe(finalize(() => this.isSubmitting.set(false)))
-      .subscribe({
-        next: (user) => this.currentUser.set(user),
-        error: (error: unknown) => this.errorMessage.set(this.getErrorMessage(error)),
-      });
   }
 
   private getErrorMessage(error: unknown): string {

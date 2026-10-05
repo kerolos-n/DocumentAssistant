@@ -90,40 +90,24 @@
           formControlName="confirmPassword"
           required
         />
+        @if (form.controls.confirmPassword.touched && form.controls.confirmPassword.invalid) {
+          <p class="mt-1 text-sm text-red-700">Confirm your password.</p>
+        } @else if (form.controls.confirmPassword.touched && form.hasError('passwordsMismatch')) {
+          <p class="mt-1 text-sm text-red-700">Passwords do not match.</p>
+        }
       </div>
     }
 
     @if (errorMessage(); as error) {
       <p class="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{{ error }}</p>
     }
-    @if (successMessage(); as message) {
-      <p class="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800" role="status">
-        {{ message }}
-      </p>
-    }
 
     <button
       class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
       type="submit"
-      [disabled]="isSubmitting()"
+      [disabled]="isSubmitting() || form.invalid"
     >
       {{ isSubmitting() ? 'Please wait…' : isRegistering() ? 'Create account' : 'Sign in' }}
     </button>
   </form>
-
-  @if (authSession()) {
-    <div class="mt-5 border-t border-slate-200 pt-5">
-      <button
-        class="text-sm font-semibold text-indigo-700 hover:text-indigo-900 disabled:opacity-60"
-        type="button"
-        [disabled]="isSubmitting()"
-        (click)="verifyProtectedAccess()"
-      >
-        Verify protected API access
-      </button>
-      @if (currentUser(); as user) {
-        <p class="mt-2 text-sm text-slate-600">Authenticated as {{ user.email }}.</p>
-      }
-    </div>
-  }
 </section>

@@ -1,13 +1,13 @@
-import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
-import env from '../environments/environment';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { TestBed } from '@angular/core/testing';
+import { Router, provideRouter } from '@angular/router';
 import { App } from './app';
 import { routes } from './app.routes';
 
 describe('App', () => {
   beforeEach(async () => {
+    localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter(routes)],
@@ -20,17 +20,48 @@ describe('App', () => {
     expect(app).toBeTruthy();
   });
 
-  it('should render title', async () => {
+  it('should render title', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
-    const httpTesting = TestBed.inject(HttpTestingController);
-    httpTesting.expectOne(`${env.API_URL}/health`).flush({
-      status: 'Healthy',
-      durationMs: 1,
-      checks: [],
-    });
-    await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('h1')?.textContent).toContain('Document Assistant');
+  });
+
+  it('offers login and register links to signed-out visitors', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+
+    const links = Array.from(root.querySelectorAll('a'));
+    expect(links.map((link) => link.textContent?.trim())).toEqual(['Login', 'Register']);
+    expect(links[0].getAttribute('href')).toBe('/auth');
+    expect(links[1].getAttribute('href')).toContain('mode=register');
+  });
+
+  it('clears the session and redirects home when signing out', async () => {
+    localStorage.setItem(
+      'document-assistant.auth',
+      JSON.stringify({
+        accessToken: 'signed-token',
+        expiresAtUtc: new Date(Date.now() + 60_000).toISOString(),
+        userId: 'user-1',
+        email: 'reader@example.com',
+      }),
+    );
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate');
+    const signOut = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    ).find((button) => button.textContent?.trim() === 'Sign out');
+    signOut?.click();
+    await fixture.whenStable();
+
+    expect(localStorage.getItem('document-assistant.auth')).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/']);
   });
 });

@@ -96,17 +96,24 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
 `src/app/app.config.ts`: `provideBrowserGlobalErrorListeners()`, `provideRouter(routes)`, and
 `provideHttpClient(withFetch(), withInterceptors([authInterceptor]))`.
 
-- `app.routes.ts` has one route: `''` → `AuthPage`. The `App` shell renders the health status plus
-  the signed-in email and a sign-out button.
+- `app.routes.ts`: `/` is a componentless public home behind `homeGuard` (guests stay, signed-in
+  users go to `/my-documents`); `/my-documents` is a componentless shell, where the documents UI will
+  go, behind `authGuard` (guests go to `/auth`); `/auth` renders `AuthPage` behind `guestGuard`
+  (signed-in users go to `/my-documents`). All three guards live in `auth/auth.guards.ts` and
+  redirect on the session. The `App` shell shows Login / Register links (`/auth`, the latter with
+  `?mode=register`) to guests and the signed-in email plus a sign-out button otherwise; signing out
+  clears the session and navigates to `/`, which guests can view.
 - `auth/auth.service.ts` (`providedIn: 'root'`) holds the `AuthSession` in a signal and mirrors it
   to `localStorage` under `document-assistant.auth`; it validates shape and expiry on restore and
   clears an expired session. Exposes `register` / `login` / `getCurrentUser` / `logout`.
 - `auth/auth.interceptor.ts` attaches `Authorization: Bearer <token>` to requests whose URL starts
   with `${env.API_URL}/api/`.
 - `auth/auth-page.ts` + `auth-page.html` — one component toggling login/register modes with
-  reactive forms; it flattens server ProblemDetails `errors`/`detail` into a single error message.
-- Fetch data with the signal-based `httpResource` where a GET fits (see `App.health`, exposed
-  through a `computed()`); auth flows use `HttpClient` + RxJS because they are imperative commands.
+  reactive forms, seeded from the `?mode=register` query param; it flattens server ProblemDetails
+  `errors`/`detail` into a single error message and navigates to `/my-documents` after a successful
+  login or register.
+- Prefer the signal-based `httpResource` where a GET fits (nothing uses it yet — the client no
+  longer calls `/health`); auth flows use `HttpClient` + RxJS because they are imperative commands.
 - Tailwind v4 is configured in CSS (`@import 'tailwindcss'` in `src/styles.css`, PostCSS bridge in
   `.postcssrc.json`); there is no `tailwind.config.js`.
 
@@ -115,9 +122,9 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
 Colocated `*.spec.ts`, run by Vitest via `@angular/build:unit-test` in jsdom. Any component using
 `httpResource`/`HttpClient` needs both `provideHttpClient()` and `provideHttpClientTesting()` in the
 `TestBed` providers or the suite won't compile; `App` also needs `provideRouter(routes)`, and the
-auth specs need `provideHttpClient(withInterceptors([authInterceptor]))`. Both auth specs attempt to
-redirect the API URL via `{ provide: env.API_URL, useValue: ... }`, but `env.API_URL` is a plain
-string read at module scope, so that provider is inert. The `client/.vscode/launch.json` `ng test`
+auth specs need `provideHttpClient(withInterceptors([authInterceptor]))`. The auth specs build URLs
+from `env.API_URL` directly; it is a plain string read at module scope, so providing it as a DI
+token has no effect. The `client/.vscode/launch.json` `ng test`
 entry still points at the old Karma debug URL (`:9876`) and does not apply.
 
 ## Git

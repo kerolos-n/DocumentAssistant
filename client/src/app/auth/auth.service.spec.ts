@@ -5,8 +5,6 @@ import env from '../../environments/environment';
 import { AuthService } from './auth.service';
 import { authInterceptor } from './auth.interceptor';
 
-const TEST_API_URL = 'https://api.example.test';
-
 describe('AuthService', () => {
   let authService: AuthService;
   let httpTesting: HttpTestingController;
@@ -15,7 +13,6 @@ describe('AuthService', () => {
     localStorage.clear();
     TestBed.configureTestingModule({
       providers: [
-        { provide: env.API_URL, useValue: TEST_API_URL },
         provideHttpClient(withInterceptors([authInterceptor])),
         provideHttpClientTesting(),
       ],
@@ -39,13 +36,13 @@ describe('AuthService', () => {
     };
 
     authService.login(session.email, 'Correct1!').subscribe();
-    httpTesting.expectOne(`${TEST_API_URL}/api/auth/login`).flush(session);
+    httpTesting.expectOne(`${env.API_URL}/api/auth/login`).flush(session);
 
     expect(authService.getAccessToken()).toBe(session.accessToken);
     expect(JSON.parse(localStorage.getItem('document-assistant.auth') ?? '{}')).toEqual(session);
 
     authService.getCurrentUser().subscribe();
-    const profileRequest = httpTesting.expectOne(`${TEST_API_URL}/api/me`);
+    const profileRequest = httpTesting.expectOne(`${env.API_URL}/api/me`);
     expect(profileRequest.request.headers.get('Authorization')).toBe('Bearer signed-token');
     profileRequest.flush({ userId: session.userId, email: session.email });
 
@@ -54,7 +51,7 @@ describe('AuthService', () => {
     expect(localStorage.getItem('document-assistant.auth')).toBeNull();
 
     authService.getCurrentUser().subscribe();
-    const anonymousRequest = httpTesting.expectOne(`${TEST_API_URL}/api/me`);
+    const anonymousRequest = httpTesting.expectOne(`${env.API_URL}/api/me`);
     expect(anonymousRequest.request.headers.has('Authorization')).toBe(false);
     anonymousRequest.flush({ userId: session.userId, email: session.email });
   });
