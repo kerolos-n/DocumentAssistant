@@ -2,7 +2,7 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { finalize } from 'rxjs';
-import { flattenProblemDetails } from '../shared/problem-details';
+import { httpErrorMessage } from '../shared/http-error';
 import { DocumentsService, DocumentStatus, DocumentSummary } from './documents.service';
 
 @Component({
@@ -125,7 +125,7 @@ export class DocumentsPage {
           const message =
             error instanceof HttpErrorResponse && error.status === 404
               ? 'That document is no longer available.'
-              : 'The document could not be downloaded. Please try again.';
+              : httpErrorMessage(error, 'The document could not be downloaded. Please try again.');
           this.errorMessage.set(message);
         },
       });
@@ -152,15 +152,9 @@ export class DocumentsPage {
   }
 
   private errorMessageFor(error: unknown, fallback: string): string {
-    if (error instanceof HttpErrorResponse) {
-      if (error.status === 0) {
-        return 'Could not reach the server. Check that the API is running.';
-      }
-
-      return flattenProblemDetails(error.error) ?? fallback;
-    }
-
-    return fallback;
+    // Shared status handling: 429 (upload throttled), 401/403/404/500, offline, and validation
+    // ProblemDetails on a 400 all resolve here.
+    return httpErrorMessage(error, fallback);
   }
 
   /** Saves a downloaded blob under its original name via a transient object URL. */

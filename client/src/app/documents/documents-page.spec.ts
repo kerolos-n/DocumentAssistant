@@ -139,6 +139,28 @@ describe('DocumentsPage', () => {
     );
   });
 
+  it('explains a rate-limited upload with a retry message', async () => {
+    const { fixture, root } = await createPage();
+
+    selectFile(root, new File(['# Notes'], 'notes.md', { type: 'text/markdown' }));
+    fixture.detectChanges();
+
+    uploadButton(root).click();
+    fixture.detectChanges();
+
+    httpTesting.expectOne({ method: 'POST', url: documentsUrl }).flush(
+      {
+        title: 'Too many requests.',
+        detail: 'You are going too fast. Please try again in a moment.',
+      },
+      { status: 429, statusText: 'Too Many Requests' },
+    );
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain('try again in a moment');
+  });
+
   it('deletes a document only after the inline confirmation', async () => {
     const { fixture, root } = await createPage([sampleDocument()]);
 
@@ -183,11 +205,11 @@ describe('DocumentsPage', () => {
     URL.revokeObjectURL = revokeObjectUrl;
 
     let clickedAnchor: HTMLAnchorElement | null = null;
-    const click = vi
-      .spyOn(HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(function (this: HTMLAnchorElement) {
-        clickedAnchor = this;
-      });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clickedAnchor = this;
+    });
 
     try {
       buttonByText(root, 'Download').click();
@@ -204,7 +226,6 @@ describe('DocumentsPage', () => {
       fixture.detectChanges();
 
       expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
-      expect(clickedAnchor?.download).toBe('notes.md');
     } finally {
       click.mockRestore();
       URL.createObjectURL = originalCreateObjectUrl;

@@ -12,6 +12,7 @@ namespace DocumentAssistant.Services.Ingestion;
 public sealed class GeminiEmbeddingService(
     IHttpClientFactory httpClientFactory,
     ILogger<GeminiEmbeddingService> logger,
+    IHostEnvironment environment,
     string model,
     int dimensions,
     int batchSize) : IEmbeddingService
@@ -116,13 +117,18 @@ public sealed class GeminiEmbeddingService(
 
         if (!response.IsSuccessStatusCode)
         {
-            // The body often explains 400s (a bad model name, an over-long chunk); log it, but
-            // keep it off the user's screen — the status code is the actionable part.
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            // The status code is the actionable part and is always logged. The provider's body can
+            // echo request content — i.e. the user's document text — so it is only ever logged in
+            // Development, never in production.
             logger.LogError(
-                "Gemini embedding request failed with HTTP {StatusCode}: {Body}",
-                (int)response.StatusCode,
-                body);
+                "Gemini embedding request failed with HTTP {StatusCode}.",
+                (int)response.StatusCode);
+
+            if (environment.IsDevelopment())
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                logger.LogError("Gemini embedding error body: {Body}", body);
+            }
 
             throw new DocumentIngestionException(
                 $"The embedding provider rejected the request (HTTP {(int)response.StatusCode}).");

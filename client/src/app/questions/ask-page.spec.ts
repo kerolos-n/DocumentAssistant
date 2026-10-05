@@ -210,4 +210,36 @@ describe('AskPage', () => {
       'The assistant is temporarily unavailable.',
     );
   });
+
+  it('caps the question length and blocks an over-long submit', () => {
+    const { fixture, root } = createPage();
+
+    expect(questionInput(root).getAttribute('maxlength')).toBe('2000');
+
+    typeQuestion(fixture, root, 'a'.repeat(2001));
+
+    expect(askButton(root).disabled).toBe(true);
+    expect(root.textContent).toContain('Questions must be 2000 characters or fewer.');
+  });
+
+  it('explains a rate-limited question with a retry message', async () => {
+    const { fixture, root } = createPage();
+
+    typeQuestion(fixture, root, 'When is it available?');
+    submit(fixture, root);
+
+    httpTesting
+      .expectOne({ method: 'POST', url: questionsUrl })
+      .flush(
+        {
+          title: 'Too many requests.',
+          detail: "You're going too fast. Please try again in a moment.",
+        },
+        { status: 429, statusText: 'Too Many Requests' },
+      );
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain('try again in a moment');
+  });
 });

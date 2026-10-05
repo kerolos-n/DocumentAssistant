@@ -2,17 +2,24 @@ using System.Security.Claims;
 using DocumentAssistant.Common.CQRS;
 using DocumentAssistant.Common.Documents;
 using DocumentAssistant.Common.Endpoints;
+using DocumentAssistant.Common.RateLimiting;
 using DocumentAssistant.Data;
 using DocumentAssistant.Data.Entities;
 using DocumentAssistant.Services;
 using DocumentAssistant.Services.Ingestion;
 using FluentValidation;
+using FluentValidation.Results;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 
 namespace DocumentAssistant.Features.Documents;
 
 internal static class UploadDocument
 {
     private const long MaxFileSizeInBytes = 20 * 1024 * 1024;
+
+    /// <summary>Per-account ceiling, so one user cannot fill the store unbounded.</summary>
+    private const int MaxDocumentsPerUser = 50;
 
     private static readonly string[] AllowedExtensions = [".pdf", ".docx", ".md", ".txt"];
 
@@ -51,6 +58,22 @@ internal static class UploadDocument
             var file = command.File!;
             var userId = command.UserId!;
             var fileName = Path.GetFileName(file.FileName);
+
+            // Checked before the blob is written: refusing an over-limit upload must not leave an
+            // orphan object behind. The message surfaces to the client as a 400 validation error.
+            var existingDocuments = await db.Documents.CountAsync(
+                document => document.UserId == userId,
+                cancellationToken);
+            if (existingDocuments >= MaxDocumentsPerUser)
+            {
+                throw new ValidationException(
+                [
+                    new ValidationFailure(
+                        "file",
+                        $"You have reached the maximum of {MaxDocumentsPerUser} documents. "
+                        + "Delete one before uploading another."),
+                ]);
+            }
 
             var id = Guid.NewGuid();
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
@@ -146,6 +169,8 @@ internal static class UploadDocument
                 return Results.Ok(document);
             })
             .RequireAuthorization()
+            // Uploads are capped per user so one account cannot flood storage or the ingestion queue.
+            .RequireRateLimiting(RateLimitPolicies.Uploads)
             // Auth is JWT bearer, not cookies, so antiforgery adds nothing here — and binding
             // IFormFile without disabling it makes the app throw during startup.
             .DisableAntiforgery();

@@ -68,9 +68,28 @@
           id="question"
           rows="3"
           placeholder="What do my documents say about…?"
+          [attr.maxlength]="maxQuestionLength"
           [value]="question()"
           (input)="onQuestionInput($event)"
         ></textarea>
+
+        <div class="mt-1 flex items-start justify-between gap-2">
+          @if (isQuestionTooLong()) {
+            <p class="text-xs font-medium text-red-600" role="alert">
+              Questions must be {{ maxQuestionLength }} characters or fewer.
+            </p>
+          } @else {
+            <span class="text-xs text-slate-500">A question about your uploaded documents.</span>
+          }
+          <span
+            class="shrink-0 text-xs tabular-nums"
+            [class.text-red-600]="isQuestionTooLong()"
+            [class.font-medium]="isQuestionTooLong()"
+            [class.text-slate-500]="!isQuestionTooLong()"
+          >
+            {{ question().length }} / {{ maxQuestionLength }}
+          </span>
+        </div>
 
         <button
           class="mt-4 w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"

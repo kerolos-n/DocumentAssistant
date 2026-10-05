@@ -12,6 +12,7 @@ namespace DocumentAssistant.Services.Chat;
 public sealed class GeminiChatService(
     IHttpClientFactory httpClientFactory,
     ILogger<GeminiChatService> logger,
+    IHostEnvironment environment,
     string model,
     int maxOutputTokens) : IChatService
 {
@@ -58,13 +59,17 @@ public sealed class GeminiChatService(
 
             if (!response.IsSuccessStatusCode)
             {
-                // The body explains 400s (a bad model name, an oversized prompt); log it, but keep
-                // it off the user's screen — the status code is the actionable part.
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                // Status is always logged; the body is not, because it can echo the prompt (which
+                // carries the user's document text). It is only logged in Development.
                 logger.LogError(
-                    "Gemini chat request failed with HTTP {StatusCode}: {Body}",
-                    (int)response.StatusCode,
-                    body);
+                    "Gemini chat request failed with HTTP {StatusCode}.",
+                    (int)response.StatusCode);
+
+                if (environment.IsDevelopment())
+                {
+                    var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                    logger.LogError("Gemini chat error body: {Body}", body);
+                }
 
                 throw new ChatServiceException(
                     "The assistant is temporarily unavailable. Please try again.");

@@ -2,6 +2,7 @@ using System.Text.Json;
 using DocumentAssistant.Extensions;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using DocumentAssistant;
+using DocumentAssistant.Common.Logging;
 
 var repositoryDirectory = new DirectoryInfo(Directory.GetCurrentDirectory());
 while (repositoryDirectory is not null && !File.Exists(Path.Combine(repositoryDirectory.FullName, "server", "server.csproj")))
@@ -20,9 +21,14 @@ builder.Services.AddAllServices(builder.Configuration);
 
 var app = builder.Build();
 
+// First in the pipeline, so every request gets a correlation id and its logs and outcome timing
+// stay together — including the exception handler's logs.
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseExceptionHandler();
 app.UseCors("client");
 app.UseAuthentication();
+// After authentication so per-user partitions can read the NameIdentifier claim.
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapGet("/", () => "Hello World!");

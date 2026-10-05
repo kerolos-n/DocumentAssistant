@@ -2,11 +2,13 @@ using System.Security.Claims;
 using DocumentAssistant.Common.CQRS;
 using DocumentAssistant.Common.Endpoints;
 using DocumentAssistant.Common.Questions;
+using DocumentAssistant.Common.RateLimiting;
 using DocumentAssistant.Data;
 using DocumentAssistant.Data.Entities;
 using DocumentAssistant.Services.Chat;
 using DocumentAssistant.Services.Ingestion;
 using FluentValidation;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Pgvector;
 using Pgvector.EntityFrameworkCore;
@@ -206,7 +208,10 @@ internal static class AskQuestion
                 };
 
                 return Results.Ok(await handler.Handle(command, cancellationToken));
-            }).RequireAuthorization();
+            })
+            .RequireAuthorization()
+            // Answering is the most expensive request in the app, so it is capped per user.
+            .RequireRateLimiting(RateLimitPolicies.Questions);
         }
     }
 }

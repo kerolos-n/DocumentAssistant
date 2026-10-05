@@ -1,12 +1,14 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using System.Reflection;
 using DocumentAssistant.Common.Behaviors;
 using DocumentAssistant.Common.Ingestion;
 using DocumentAssistant.Common.Questions;
+using DocumentAssistant.Common.RateLimiting;
 using DocumentAssistant.Extensions;
-using DocumentAssistant.Features.Auth;
 using DocumentAssistant.Data;
 using DocumentAssistant.Services;
 using DocumentAssistant.Services.Chat;
@@ -14,6 +16,7 @@ using DocumentAssistant.Services.Ingestion;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using DocumentAssistant.Common.Exceptions;
@@ -113,6 +116,7 @@ public static class DependencyInjection
 
         AddIngestion(services, configuration);
         AddQuestionAnswering(services, configuration);
+        AddRateLimiting(services, configuration);
 
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -203,6 +207,7 @@ public static class DependencyInjection
         services.AddSingleton<IEmbeddingService>(provider => new GeminiEmbeddingService(
             provider.GetRequiredService<IHttpClientFactory>(),
             provider.GetRequiredService<ILogger<GeminiEmbeddingService>>(),
+            provider.GetRequiredService<IHostEnvironment>(),
             model,
             IngestionDefaults.EmbeddingDimensions,
             batchSize));
@@ -248,7 +253,91 @@ public static class DependencyInjection
         services.AddSingleton<IChatService>(provider => new GeminiChatService(
             provider.GetRequiredService<IHttpClientFactory>(),
             provider.GetRequiredService<ILogger<GeminiChatService>>(),
+            provider.GetRequiredService<IHostEnvironment>(),
             model,
             maxOutputTokens));
+    }
+
+    /// <summary>
+    /// Registers the per-user rate-limit policies applied to the two expensive, abusable
+    /// endpoints: asking a question and uploading a document. Each partition is one signed-in
+    /// user, falling back to the client IP so anonymous callers are still bounded.
+    /// </summary>
+    private static void AddRateLimiting(IServiceCollection services, IConfiguration configuration)
+    {
+        var questionPermitLimit = configuration.GetValue("RateLimiting:QuestionPermitLimit", RateLimitPolicies.DefaultQuestionPermitLimit);
+        var questionWindowSeconds = configuration.GetValue("RateLimiting:QuestionWindowSeconds", RateLimitPolicies.DefaultQuestionWindowSeconds);
+        var uploadPermitLimit = configuration.GetValue("RateLimiting:UploadPermitLimit", RateLimitPolicies.DefaultUploadPermitLimit);
+        var uploadWindowSeconds = configuration.GetValue("RateLimiting:UploadWindowSeconds", RateLimitPolicies.DefaultUploadWindowSeconds);
+
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+            options.AddPolicy(RateLimitPolicies.Questions,
+                httpContext => PartitionByUser(httpContext, questionPermitLimit, questionWindowSeconds));
+            options.AddPolicy(RateLimitPolicies.Uploads,
+                httpContext => PartitionByUser(httpContext, uploadPermitLimit, uploadWindowSeconds));
+
+            options.OnRejected = async (context, cancellationToken) =>
+            {
+                context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+                // Tell a well-behaved client how long to wait when the limiter knows.
+                if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                {
+                    context.HttpContext.Response.Headers.RetryAfter =
+                        Math.Ceiling(retryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+                }
+
+                // No secrets or request content here: just who was throttled and where.
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("DocumentAssistant.RateLimiting");
+                logger.LogWarning(
+                    "Rate limit rejected {Method} {Path} for {PartitionKey}.",
+                    context.HttpContext.Request.Method,
+                    context.HttpContext.Request.Path.Value,
+                    context.HttpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous");
+
+                // ProblemDetails so the client's existing error parser shows a readable message
+                // rather than an empty body.
+                await context.HttpContext.Response.WriteAsJsonAsync(
+                    new ProblemDetails
+                    {
+                        Status = StatusCodes.Status429TooManyRequests,
+                        Title = "Too many requests.",
+                        Detail = "You're going too fast. Please try again in a moment.",
+                    },
+                    cancellationToken);
+            };
+        });
+    }
+
+    /// <summary>
+    /// One fixed-window bucket per signed-in user, keyed by the NameIdentifier claim. This runs
+    /// after authentication (see Program.cs), so the claim is populated; anonymous requests fall
+    /// back to the client IP so they are bounded too. The keys are claim values, not unbounded
+    /// request text, so the partition map cannot be grown without bound.
+    /// </summary>
+    private static RateLimitPartition<string> PartitionByUser(
+        HttpContext httpContext,
+        int permitLimit,
+        int windowSeconds)
+    {
+        var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var partitionKey = userId is not null
+            ? $"user:{userId}"
+            : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = permitLimit,
+                QueueLimit = 0,
+                Window = TimeSpan.FromSeconds(windowSeconds),
+            });
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DocumentAssistant.Data;
 using DocumentAssistant.Data.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -51,6 +52,8 @@ public sealed class DocumentIngestionWorker(
 
     private async Task ProcessAsync(Guid documentId, CancellationToken cancellationToken)
     {
+        var startedAt = Stopwatch.GetTimestamp();
+
         // The worker is a singleton, so every unit of work gets its own scope — and with it a
         // fresh DbContext.
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -117,9 +120,10 @@ public sealed class DocumentIngestionWorker(
         await db.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "Ingested document {DocumentId} into {ChunkCount} chunks.",
+            "Ingested document {DocumentId} into {ChunkCount} chunks in {ElapsedMilliseconds} ms.",
             documentId,
-            chunks.Count);
+            chunks.Count,
+            Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
     }
 
     /// <summary>Scanned PDFs are the common case worth naming explicitly — OCR is out of scope.</summary>

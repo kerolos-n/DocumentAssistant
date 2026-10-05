@@ -1,10 +1,12 @@
-import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
 import { DocumentsService, DocumentStatus } from '../documents/documents.service';
-import { flattenProblemDetails } from '../shared/problem-details';
+import { httpErrorMessage } from '../shared/http-error';
 import { Answer, QuestionsService } from './questions.service';
+
+/** Mirrors the server's `AskQuestion.MaxQuestionLength`; the two must stay in step. */
+const MAX_QUESTION_LENGTH = 2000;
 
 @Component({
   imports: [RouterLink],
@@ -25,6 +27,8 @@ export class AskPage {
   protected readonly answer = signal<Answer | null>(null);
   protected readonly errorMessage = signal<string | null>(null);
 
+  protected readonly maxQuestionLength = MAX_QUESTION_LENGTH;
+
   /**
    * Status dot colours. Complete class names, not fragments, so Tailwind's scanner emits them.
    */
@@ -35,10 +39,19 @@ export class AskPage {
     Failed: 'bg-red-500',
   };
 
-  /** A blank question is not worth a round trip, and a second submit while loading is a duplicate. */
-  protected readonly canSubmit = computed(
-    () => this.question().trim().length > 0 && !this.isLoading(),
+  /** True once the text exceeds what the server will accept, so the form can say so up front. */
+  protected readonly isQuestionTooLong = computed(
+    () => this.question().length > MAX_QUESTION_LENGTH,
   );
+
+  /**
+   * A blank question is not worth a round trip, an over-long one would only earn a 400, and a
+   * second submit while loading is a duplicate.
+   */
+  protected readonly canSubmit = computed(() => {
+    const length = this.question().trim().length;
+    return length > 0 && length <= MAX_QUESTION_LENGTH && !this.isLoading();
+  });
 
   protected onQuestionInput(event: Event): void {
     this.question.set((event.target as HTMLTextAreaElement).value);
@@ -46,7 +59,7 @@ export class AskPage {
 
   protected ask(): void {
     const question = this.question().trim();
-    if (question.length === 0 || this.isLoading()) {
+    if (question.length === 0 || question.length > MAX_QUESTION_LENGTH || this.isLoading()) {
       return;
     }
 
@@ -64,21 +77,7 @@ export class AskPage {
   }
 
   private errorMessageFor(error: unknown): string {
-    const fallback = 'The question could not be answered. Please try again.';
-
-    if (error instanceof HttpErrorResponse) {
-      if (error.status === 0) {
-        return 'Could not reach the server. Check that the API is running.';
-      }
-
-      // The API answers 502 when the model provider fails or times out.
-      if (error.status === 502 || error.status === 504) {
-        return 'The assistant is temporarily unavailable. Please try again.';
-      }
-
-      return flattenProblemDetails(error.error) ?? fallback;
-    }
-
-    return fallback;
+    // Shared status handling covers 429 ("try again in a moment") and 502 (assistant down).
+    return httpErrorMessage(error, 'The question could not be answered. Please try again.');
   }
 }

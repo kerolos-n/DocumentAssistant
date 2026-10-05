@@ -41,6 +41,8 @@ internal sealed class GlobalExceptionHandler(
                             .ToDictionary(
                                 group => group.Key,
                                 group => group.Select(failure => failure.ErrorMessage).ToArray()),
+                        // Lets a user report a failure and let us find the exact request in the logs.
+                        ["traceId"] = httpContext.TraceIdentifier,
                     },
                 },
             });
@@ -78,9 +80,13 @@ internal sealed class GlobalExceptionHandler(
             {
                 Status = statusCode,
                 Title = title,
+                // The Detail is only ever a message we chose (or a known-safe exception message).
+                // A 500 is deliberately generic: its stack trace and inner exception stay in the
+                // logs, keyed by traceId, and never reach the client.
                 Detail = statusCode == StatusCodes.Status500InternalServerError
                     ? "An unexpected error occurred. Please try again later."
                     : exception.Message,
+                Extensions = { ["traceId"] = httpContext.TraceIdentifier },
             },
         });
     }

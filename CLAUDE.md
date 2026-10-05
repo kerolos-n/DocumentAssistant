@@ -57,8 +57,9 @@ start rather than accept documents it cannot index. `appsettings.json` carries o
 non-secret defaults (Jwt `Issuer`/`Audience`/`ExpirationMinutes`, itself 60; `Ingestion`
 chunk size/overlap/batch size; `Retrieval` top-K (5) and similarity threshold (0.5 — a floor for
 "obviously unrelated", not a relevance test, because the 1536-dimension vectors are truncated from
-the model's 3072 and truncation deflates cosine scores); Gemini
-`EmbeddingModel`, `ChatModel`, `ChatMaxOutputTokens`, and `ChatTimeoutSeconds`).
+the model's 3072 and truncation deflates cosine scores); `RateLimiting` per-policy permit count and
+window seconds; Gemini `EmbeddingModel`, `ChatModel`, `ChatMaxOutputTokens`, and
+`ChatTimeoutSeconds`).
 
 **Client.** The API base URL is `client/src/environments/environment.ts`, a default export
 `{ API_URL }` — import it as `import env from '../environments/environment'`. There is no
@@ -71,9 +72,12 @@ exists but is gitignored and referenced nowhere.
 
 ## Server architecture
 
-`Program.cs` is now a thin bootstrap: load `.env` → `AddAllServices` → `UseCors` /
-`UseAuthentication` / `UseAuthorization` → `MapGet("/")`, `MapEndpoints()`, and the `/health`
-JSON writer. Routes are **not** declared there anymore.
+`Program.cs` is now a thin bootstrap: load `.env` → `AddAllServices` →
+`CorrelationIdMiddleware` → `UseExceptionHandler` → `UseCors` / `UseAuthentication` /
+`UseRateLimiter` / `UseAuthorization` → `MapGet("/")`, `MapEndpoints()`, and the `/health`
+JSON writer. Routes are **not** declared there anymore. The rate limiter sits _after_
+authentication on purpose: its per-user partition reads the `NameIdentifier` claim, which is only
+populated once the bearer token is validated.
 
 - **`DependencyInjection.cs`** — `AddAllServices` is the composition root: DbContext, Identity,
   CQRS handler registrations, endpoint discovery, JWT bearer auth, CORS. Note it calls
@@ -92,7 +96,11 @@ JSON writer. Routes are **not** declared there anymore.
   while upload/list share the `DocumentResponse` record in `Common/Documents/` — which now carries
   `Status` and `ErrorMessage` alongside the file metadata. Upload persists the row as `Pending` and
   only then enqueues it for ingestion; delete needs no explicit chunk cleanup because the
-  `DocumentChunks` foreign key cascades.
+  `DocumentChunks` foreign key cascades. Upload also enforces a **per-user document cap**
+  (`MaxDocumentsPerUser = 50`) by counting rows _before_ the blob write — an over-limit upload must
+  never create an orphan — and throws a `ValidationException` that becomes a `400` with a `file`
+  error. If the metadata `SaveChangesAsync` fails after the blob was written, the handler deletes
+  the blob best-effort (`TryDeleteBlobAsync`) so no unreferenced object is stranded.
 - **`Services/DocumentStorage.cs`** — singleton wrapping one private Azure blob container
   (`Azure:BlobStorage:ConnectionString` / `:ContainerName`; Azurite emulates it locally). Exposes
   `UploadAsync` / `OpenReadAsync` / `DeleteAsync` and creates the container lazily, once. Blobs are
@@ -128,7 +136,9 @@ JSON writer. Routes are **not** declared there anymore.
   normalised output at full 3072 width. The interface splits the two task types —
   `EmbedDocumentsAsync` uses `RETRIEVAL_DOCUMENT`, `EmbedQueryAsync` uses `RETRIEVAL_QUERY` — because
   mixing them degrades similarity. Batches are capped at 100 (the API's limit), and provider error
-  bodies are logged rather than surfaced; the user sees only the status code.
+  bodies are logged rather than surfaced; the user sees only the status code. The body is logged
+  **only in Development** (the service takes `IHostEnvironment`), because a provider error can echo
+  the chunk text it rejected — production logs carry the status code alone.
 - **Question slice** — `Features/Questions/AskQuestion.cs` is a *command* slice
   (`POST /api/questions`), so `ValidationBehavior` runs its `Validator`; the earlier `IQuery` slices
   validate inline instead. The handler, in order: if the user has no `Ready` document, return
@@ -146,7 +156,8 @@ JSON writer. Routes are **not** declared there anymore.
   (like the embedder, no SDK), configured with a `systemInstruction`, low temperature, a
   `maxOutputTokens` cap, and its own `HttpClient` timeout. A provider error, a timeout, or an empty
   candidate becomes a `ChatServiceException`, which `GlobalExceptionHandler` maps to **502** — the
-  client's error state. The message is user-safe; provider bodies are logged. `QuestionPrompt`
+  client's error state. The message is user-safe; provider error bodies are logged only in
+  Development. `QuestionPrompt`
   (`Features/Questions/`) owns the system prompt — answer only from context, admit ignorance, and
   treat document text as data, never instructions — so the injection guard lives in one place.
 - **`Common/Endpoints/IEndpoint.cs`** — implement `void MapEndpoint(IEndpointRouteBuilder)`.
@@ -176,12 +187,27 @@ JSON writer. Routes are **not** declared there anymore.
   inbound claims, and a 30 s clock skew.
 - **`/health`** wraps the built-in health-check middleware and returns **503 when unhealthy**, so
   the client sees a failed request, never a readable `"Unhealthy"` body.
+- **Protection & hardening.** Two named rate-limit policies live in
+  `Common/RateLimiting/RateLimitPolicies.cs` and are registered in `DependencyInjection.cs`
+  (`AddRateLimiting`, configured from the `RateLimiting` section): `questions` (default 20 / 5 min)
+  applied to `POST /api/questions`, and `uploads` (default 20 / hour) on `POST /api/documents`. Each
+  is a fixed window partitioned by the `NameIdentifier` claim, falling back to the client IP for
+  anonymous callers. Rejections answer **429** with a ProblemDetails body and a `Retry-After` header
+  via `OnRejected`. The question length cap (`AskQuestion.MaxQuestionLength = 2000`) is enforced by
+  the slice's `Validator`; the per-user document cap is enforced in the upload handler (see above).
+  `Common/Logging/CorrelationIdMiddleware.cs` runs first: it assigns every request a correlation id
+  (from `X-Correlation-Id` when it is a safe token, else a fresh GUID), puts it in `TraceIdentifier`
+  and a log scope, echoes it in the response header, and logs method/path/status/elapsed. The
+  ingestion worker logs chunk count and elapsed ms per document. `GlobalExceptionHandler` echoes the
+  correlation id as `traceId` on every ProblemDetails and keeps `500` details generic, so stack
+  traces stay in the logs and never reach a client; the provider services never log request content
+  in production.
 
 ## Client architecture
 
 Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers go in
 `src/app/app.config.ts`: `provideBrowserGlobalErrorListeners()`, `provideRouter(routes)`, and
-`provideHttpClient(withFetch(), withInterceptors([authInterceptor]))`.
+`provideHttpClient(withFetch(), withInterceptors([authInterceptor, sessionExpiryInterceptor]))`.
 
 - `app.routes.ts`: `/` renders `HomePage` (the public landing page) behind `homeGuard` (guests stay,
   signed-in users go to `/ask`); `/my-documents` is a componentless shell behind `authGuard` (guests
@@ -202,6 +228,12 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
   clears an expired session. Exposes `register` / `login` / `getCurrentUser` / `logout`.
 - `auth/auth.interceptor.ts` attaches `Authorization: Bearer <token>` to requests whose URL starts
   with `${env.API_URL}/api/`.
+- `auth/session-expiry.interceptor.ts` handles **401 globally**: a rejected token means the stored
+  session is stale, so it logs out and navigates to `/auth`. Requests to `/api/auth/*` are excluded —
+  a rejected login is bad credentials, not an expired session. `shared/http-error.ts` centralises the
+  status→message mapping (`0` offline, `401`/`403`/`404`/`429`/`500`, `502`/`504` assistant down) that
+  the pages use, so every screen explains a failure the same way; `429` renders the "try again in a
+  moment" message.
 - `auth/auth-page.ts` + `auth-page.html` — one component toggling login/register modes with
   reactive forms, seeded from the `?mode=register` query param; it flattens server ProblemDetails
   `errors`/`detail` into a single error message and navigates to `/ask` after a successful
@@ -232,8 +264,10 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
   `{ isAnswerable, outcome, answer, citations }`, with `outcome`
   (`Answered` / `NoDocuments` / `NoRelevantContext`) driving three distinct panels: the answer with
   its citations, an amber "no documents" card linking to `/my-documents`, and a neutral "no answer
-  found" card. Submit is disabled while the input is blank or a request is in flight, and a `502`
-  (the assistant is down or timed out) renders the error alert. The chat itself makes no request on
+  found" card. Submit is disabled while the input is blank, too long, or a request is in flight, and a
+  `502` (the assistant is down or timed out) renders the error alert. The form enforces the server's
+  2000-character cap (`maxlength` plus a `canSubmit` upper bound and a live counter), and a `429`
+  renders the shared rate-limit message. The chat itself makes no request on
   load, but the sidebar's `DocumentsService` fires a `GET /api/documents`, so its spec flushes that
   before asserting.
 - Prefer the signal-based `httpResource` where a GET fits (nothing uses it yet); the documents list
@@ -259,7 +293,9 @@ its polling interval when an unsettled document is present, so the documents spe
 keeps `fixture.whenStable()` and `httpTesting.verify()` meaningful. The polling spec installs
 `vi.useFakeTimers()` _before_ `TestBed.createComponent`, because the interval is created from the
 service constructor; faking the clock after the component exists would leave the real timer
-running.
+running. `auth/session-expiry.interceptor.spec.ts` covers the global 401 path (protected call →
+logout + redirect, login → untouched); the ask-page and documents-page specs cover the `429` message
+and the question-length cap.
 
 ## Git
 
