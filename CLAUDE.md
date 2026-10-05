@@ -2,16 +2,20 @@
 
 A simple AI knowledge base (RAG). Users register and log in, upload documents (PDF, DOCX, MD, TXT), and ask questions that are answered from their own documents, with citations. This is a portfolio project, so **simplicity and clarity beat feature count**.
 
-Accounts/auth (register, login, `/api/me`) and document management (upload, list, download, delete)
-exist today. Semantic search and Q&A are not built yet.
+Accounts/auth (register, login, `/api/me`), document management (upload, list, download, delete),
+and the first half of the RAG pipeline — extract → chunk → embed → store into `DocumentChunks` —
+exist today. Retrieval (semantic search) and Q&A are not built yet.
 
 ## Docs: use Context7, not memory
 
-Angular 22, .NET 10, EF Core 10, and ASP.NET Core Identity are newer than most training data. Before writing code against any of them, look them up with the Context7 MCP server: `resolve-library-id`, then `query-docs` with the returned `/org/project` ID — one concept per call. Skip it for this repo's own logic.
+Angular 22, .NET 10, EF Core 10, ASP.NET Core Identity, pgvector, and Google's Gemini embedding
+API are newer than most training data. Before writing code against any of them, look them up with
+the Context7 MCP server: `resolve-library-id`, then `query-docs` with the returned `/org/project`
+ID — one concept per call. Skip it for this repo's own logic.
 
 ## Layout
 
-Two independent apps, no root package manager or solution file: `client/` (Angular 22, standalone components, TypeScript 6, Tailwind v4) and `server/` (ASP.NET Core minimal API, `net10.0`, EF Core + Npgsql/PostgreSQL, ASP.NET Core Identity, JWT bearer auth).
+Two independent apps, no root package manager or solution file: `client/` (Angular 22, standalone components, TypeScript 6, Tailwind v4) and `server/` (ASP.NET Core minimal API, `net10.0`, EF Core + Npgsql/PostgreSQL with pgvector, ASP.NET Core Identity, JWT bearer auth).
 
 ## Commands
 
@@ -31,8 +35,10 @@ dotnet watch                 # hot reload
 dotnet run                   # once (uses the `http` profile)
 dotnet build
 dotnet ef migrations add <Name>    # EF Core; needs the .env connection string
-dotnet ef database update          # apply migrations (the app never migrates on boot)
-``
+dotnet ef database update          # apply migrations (the app never migrates on boot); the
+                                   # migration runs CREATE EXTENSION vector, so the Postgres
+                                   # server must ship pgvector (e.g. the pgvector/pgvector image)
+```
 The root `.vscode/tasks.json` has `Run Full Project` to start both in parallel.
 
 ## Configuration & secrets
@@ -41,10 +47,14 @@ The root `.vscode/tasks.json` has `Run Full Project` to start both in parallel.
 through DotNetEnv's `NoClobber()` _before_ the builder is created, walking up from the current
 directory to find `server/server.csproj`. Required keys: `ConnectionStrings__DefaultConnection`,
 `Jwt__Key` (≥32 bytes), `Jwt__Issuer`, `Jwt__Audience`, `Client__Origin`,
-`Azure__BlobStorage__ConnectionString`, `Azure__BlobStorage__ContainerName`, `ASPNETCORE_URLS`.
+`Azure__BlobStorage__ConnectionString`, `Azure__BlobStorage__ContainerName`, `Gemini__ApiKey`,
+`ASPNETCORE_URLS`.
 `AddAllServices` throws `InvalidOperationException` at startup when any is missing or too short, so
-a missing `.env` crashes `dotnet run` instead of starting a server. `appsettings.json` carries only
-non-secret defaults (Jwt `Issuer`/`Audience`/`ExpirationMinutes`, itself 60).
+a missing `.env` crashes `dotnet run` instead of starting a server. `Gemini__ApiKey` is required
+because chunk embedding is not optional: without it every upload would fail, so the app refuses to
+start rather than accept documents it cannot index. `appsettings.json` carries only
+non-secret defaults (Jwt `Issuer`/`Audience`/`ExpirationMinutes`, itself 60; `Ingestion`
+chunk size/overlap/batch size; Gemini `EmbeddingModel`).
 
 **Client.** The API base URL is `client/src/environments/environment.ts`, a default export
 `{ API_URL }` — import it as `import env from '../environments/environment'`. There is no
@@ -75,12 +85,46 @@ JSON writer. Routes are **not** declared there anymore.
   token rather than the URL — another user's document is indistinguishable from a missing one
   (`404`). Download returns `Results.File(stream, contentType, fileName)`, which sets
   `Content-Disposition`; its response record is nested in the slice (`DocumentDownloadResponse`),
-  while upload/list share the `DocumentResponse` record in `Common/Documents/`.
+  while upload/list share the `DocumentResponse` record in `Common/Documents/` — which now carries
+  `Status` and `ErrorMessage` alongside the file metadata. Upload persists the row as `Pending` and
+  only then enqueues it for ingestion; delete needs no explicit chunk cleanup because the
+  `DocumentChunks` foreign key cascades.
 - **`Services/DocumentStorage.cs`** — singleton wrapping one private Azure blob container
   (`Azure:BlobStorage:ConnectionString` / `:ContainerName`; Azurite emulates it locally). Exposes
   `UploadAsync` / `OpenReadAsync` / `DeleteAsync` and creates the container lazily, once. Blobs are
   named `{userId}/{documentId}{extension}` (never the client-supplied name), and the original file
   name and content type live in the `Documents` Postgres row — that is what download serves back.
+- **Ingestion pipeline** under `Services/Ingestion/`, run by `DocumentIngestionWorker` (a
+  `BackgroundService`): extract → chunk → embed → store. Uploads and processing are decoupled by
+  `DocumentIngestionQueue`, a singleton wrapping an unbounded `Channel<Guid>`; the upload endpoint
+  enqueues an id _after_ `SaveChangesAsync` commits, because the worker looks the document up by
+  id. The worker drains serially, moves `Pending` → `Processing` → `Ready`/`Failed`, and wraps each
+  document in its own try/catch so one bad file cannot kill it. On startup it re-queues rows stuck
+  in `Pending`/`Processing` (it runs before the read loop, so a crash mid-ingest self-heals). Only a
+  `DocumentIngestionException`'s message reaches the user's `ErrorMessage`; everything else is
+  logged and reported generically. Re-processing deletes the document's existing chunks first, so a
+  retry replaces rather than duplicates.
+- **Text extractors** implement `ITextExtractor` (`bool CanHandle(extension)` + `ExtractAsync`
+  returning `TextSegment(Text, PageNumber)`); `TextExtractorResolver` picks one from the registered
+  set by file extension, so adding a format is adding a class. `PdfTextExtractor` (PdfPig) yields
+  one segment per page and carries the page number; `DocxTextExtractor`
+  (DocumentFormat.OpenXml) flattens paragraphs and has no pages; `PlainTextExtractor` handles MD
+  and TXT as UTF-8. The PDF and DOCX readers are synchronous, so both run inside `Task.Run`. A
+  PDF with no text layer (a scan) yields no segments and becomes `Failed` with a message naming
+  OCR — OCR itself is out of scope.
+- **`TextChunker`** splits by size with overlap, preferring paragraph → sentence → space
+  boundaries, and chunking each segment separately so a chunk's page number is never ambiguous.
+  Size/overlap/batch size come from the `Ingestion` config section, defaulting to
+  `Common/Ingestion/IngestionDefaults.cs`.
+- **`IEmbeddingService` / `GeminiEmbeddingService`** — calls `batchEmbedContents` on the
+  Generative Language REST API directly rather than through an SDK, so there is no package version
+  to keep in step with the framework. Two details matter: it asks for
+  `outputDimensionality: 1536` (a width `gemini-embedding-001` supports, which is why the column is
+  1536 with no migration churn) and it L2-normalises every vector, because Gemini only returns
+  normalised output at full 3072 width. It uses `taskType: RETRIEVAL_DOCUMENT` — retrieval will
+  need `RETRIEVAL_QUERY` for the query side, and mixing the two degrades similarity. Batches are
+  capped at 100 (the API's limit), and provider error bodies are logged rather than surfaced;
+  the user sees only the status code.
 - **`Common/Endpoints/IEndpoint.cs`** — implement `void MapEndpoint(IEndpointRouteBuilder)`.
   `Extensions/EndpointExtensions.cs` reflects over the assembly at startup, registers every
   implementation as a transient, and `MapEndpoints()` invokes them. Adding an endpoint = adding a
@@ -94,9 +138,15 @@ JSON writer. Routes are **not** declared there anymore.
 - **`Services/JwtTokenService.cs`** — singleton; HMAC-SHA256, enforces the 32-byte key. Emits
   `sub`/`email`/`jti` claims and returns `TokenResponse` (`Common/Auth/`) —
   `{ AccessToken, ExpiresAtUtc, UserId, Email }`, serialized camelCase.
-- **`Data/ApplicationDbContext.cs`** — `IdentityDbContext<IdentityUser>`; migrations live in
-  `Data/Migrations/`. Nothing calls `Database.Migrate()`, so apply schema with
-  `dotnet ef database update` before running.
+- **`Data/ApplicationDbContext.cs`** — `IdentityDbContext<IdentityUser>` over `Documents` and
+  `DocumentChunks`; migrations live in `Data/Migrations/`. Nothing calls `Database.Migrate()`, so
+  apply schema with `dotnet ef database update` before running. It declares the `vector` extension
+  and maps `DocumentChunk.Embedding` as a `vector(1536)` column, so `AddDbContext` must keep
+  `npgsql => npgsql.UseVector()` — without it Npgsql cannot read the type and inserts fail at
+  runtime, not at startup. `Document.Status` is a `DocumentStatus` enum stored as text with a
+  `'Pending'` SQL default, which is what backfills rows that predate the column (they then get
+  re-ingested on the next start). There is deliberately **no HNSW/IVFFlat index yet** — add one to
+  the `DocumentChunks` config once data volume justifies it.
 - **Auth contract.** Bad login → `401`. Invalid register input → `ValidationProblem` (`400` with an
   `errors` dictionary). Tokens validate with `NameClaimType = ClaimTypes.NameIdentifier`, mapped
   inbound claims, and a 30 s clock skew.
@@ -128,13 +178,24 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
 - `documents/documents.service.ts` (`providedIn: 'root'`) — the list lives in signals
   (`documents`, `isLoading`, `loadError`) and it exposes `reload` / `upload` / `delete` /
   `download`. `download` requests `responseType: 'blob'`, so an error body arrives as a `Blob`
-  rather than parseable JSON.
+  rather than parseable JSON. `DocumentSummary` mirrors the server's `DocumentStatus` as a string
+  union. Ingestion progress is **polled, not pushed**: a `computed` boolean
+  (`hasUnsettledDocuments`) drives an `effect` that subscribes to an `interval` only while some
+  document is `Pending`/`Processing`, and the effect's `onCleanup` tears the subscription down once
+  everything settles. Reading the computed rather than the array is what keeps the cadence steady —
+  the effect re-runs only when that boolean flips, not on every response. Polls are silent and
+  swallow errors: a refresh must not flip `isLoading` (that would replace the list with a loading
+  message every few seconds), and one blip must not kill the cadence.
 - `documents/documents-page.ts` + `documents-page.html` — the upload control, the list, an inline
   delete confirmation (arm, then Confirm/Cancel), and a Download button that saves the blob under its
-  original file name through a transient object URL.
+  original file name through a transient object URL. Each row carries a status badge whose colours
+  come from a `Record<DocumentStatus, string>` of _complete_ Tailwind class names (complete, not
+  fragments, so Tailwind's scanner finds them in the `.ts` file); `Processing` also renders an
+  `animate-spin` spinner, and `Failed` shows the server's reason inline and as a `title` tooltip.
 - Prefer the signal-based `httpResource` where a GET fits (nothing uses it yet); the documents list
   and auth flows use `HttpClient` + RxJS because a resource registers a pending task that stops
-  `fixture.whenStable()` resolving in the existing specs, and auth is imperative anyway.
+  `fixture.whenStable()` resolving in the existing specs, and auth is imperative anyway. Polling
+  reinforces that choice: the list needs `interval` + `switchMap`, which a resource cannot express.
 - Tailwind v4 is configured in CSS (`@import 'tailwindcss'` in `src/styles.css`, PostCSS bridge in
   `.postcssrc.json`); there is no `tailwind.config.js`.
 
@@ -148,11 +209,16 @@ from `env.API_URL` directly; it is a plain string read at module scope, so provi
 token has no effect. The `client/.vscode/launch.json` `ng test`
 entry still points at the old Karma debug URL (`:9876`) and does not apply. The documents download
 spec stubs `URL.createObjectURL` / `revokeObjectURL` (jsdom implements neither) and spies
-`HTMLAnchorElement.prototype.click`, restoring both afterwards.
+`HTMLAnchorElement.prototype.click`, restoring both afterwards. The documents service only starts
+its polling interval when an unsettled document is present, so the documents spec's
+`sampleDocument()` defaults to `Ready` and every other spec never starts a timer — which is what
+keeps `fixture.whenStable()` and `httpTesting.verify()` meaningful. The polling spec installs
+`vi.useFakeTimers()` _before_ `TestBed.createComponent`, because the interval is created from the
+service constructor; faking the clock after the component exists would leave the real timer
+running.
 
 ## Git
 
 Root `.gitignore` is the only one — the generated `client/.gitignore` does not exist, though a
 comment in the root file still claims it does. It excludes `.env`, `client/public/runtime-config.json`,
 `.vscode/`, and `.claude/settings.local.json`.
-```

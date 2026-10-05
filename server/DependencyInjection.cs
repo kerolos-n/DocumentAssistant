@@ -16,7 +16,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using DocumentAssistant.Common.Exceptions;
 using DocumentAssistant.Common.CQRS;
-using Pgvector.EntityFrameworkCore;
 
 namespace DocumentAssistant;
 
@@ -162,12 +161,47 @@ public static class DependencyInjection
 
         services.AddSingleton<ITextChunker>(new TextChunker(chunkSize, chunkOverlap));
 
-        // A credentials-free stand-in. Point this at a real provider (and match the vector width
-        // to IngestionDefaults.EmbeddingDimensions) to produce semantic embeddings.
-        services.AddSingleton<IEmbeddingService>(
-            new StubEmbeddingService(IngestionDefaults.EmbeddingDimensions, embeddingBatchSize));
+        AddEmbedding(services, configuration, embeddingBatchSize);
 
         services.AddSingleton<DocumentIngestionQueue>();
         services.AddHostedService<DocumentIngestionWorker>();
+    }
+
+    /// <summary>
+    /// Registers the Gemini embedding provider. The API key is required: without it every
+    /// upload would fail, so the app refuses to start rather than accept documents it cannot
+    /// index — the same contract as the connection string and JWT key.
+    /// </summary>
+    private static void AddEmbedding(IServiceCollection services, IConfiguration configuration, int batchSize)
+    {
+        var apiKey = configuration["Gemini:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException(
+                "Gemini:ApiKey must be configured to sembed document chunks " + "(set Gemini__ApiKey in server/.env).");
+        }
+
+        var model = configuration["Gemini:EmbeddingModel"];
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            model = GeminiEmbeddingService.DefaultModel;
+        }
+
+        services.AddHttpClient(GeminiEmbeddingService.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(GeminiEmbeddingService.BaseAddress);
+            // A header rather than the ?key= query parameter keeps the secret out of URLs and logs.
+            client.DefaultRequestHeaders.Add("x-goog-api-key", apiKey);
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+
+        // The factory is injected rather than a single HttpClient, so the handler is recycled and
+        // DNS stays fresh across a long-lived singleton.
+        services.AddSingleton<IEmbeddingService>(provider => new GeminiEmbeddingService(
+            provider.GetRequiredService<IHttpClientFactory>(),
+            provider.GetRequiredService<ILogger<GeminiEmbeddingService>>(),
+            model,
+            IngestionDefaults.EmbeddingDimensions,
+            batchSize));
     }
 }

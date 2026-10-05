@@ -7,7 +7,11 @@ namespace DocumentAssistant.Common.Ingestion;
 /// </summary>
 public static class IngestionDefaults
 {
-    /// <summary>Must match the embedding provider's output width.</summary>
+    /// <summary>
+    /// Must match the embedding provider's output width. 1536 is one of the widths
+    /// <c>gemini-embedding-001</c> supports, so the model is asked to truncate to it — which keeps
+    /// the vectors cheap to store and compare without changing the column.
+    /// </summary>
     public const int EmbeddingDimensions = 1536;
 
     /// <summary>Target characters per chunk — roughly 250 tokens, well inside provider limits.</summary>
