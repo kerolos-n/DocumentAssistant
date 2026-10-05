@@ -1,113 +1,131 @@
-<section
-  class="mx-auto mt-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
->
-  <div class="mb-6">
-    <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">
-      Your private library
+<div class="grid w-full gap-14 pt-4 sm:pt-8 lg:grid-cols-[1fr_minmax(0,25rem)] lg:gap-20">
+  <div class="hidden lg:block">
+    <p class="font-display text-4xl font-semibold leading-tight tracking-tight">
+      Your documents,<br />
+      with their sources.
     </p>
-    <h2 class="mt-2 text-2xl font-bold text-slate-900">
+    <p class="mt-5 max-w-sm text-[15px] leading-relaxed text-muted">
+      Answers come only from the files you uploaded, and every one of them points back to the
+      passage it was drawn from.
+    </p>
+  </div>
+
+  <section class="w-full">
+    <h2 class="font-display text-3xl font-semibold tracking-tight">
       {{ isRegistering() ? 'Create your account' : 'Welcome back' }}
     </h2>
-    <p class="mt-2 text-sm text-slate-600">
+    <p class="mt-3 text-[15px] leading-relaxed text-muted">
       {{
         isRegistering()
           ? 'Register to start building your knowledge base.'
           : 'Sign in to continue to your documents.'
       }}
     </p>
-  </div>
 
-  <div class="mb-6 grid grid-cols-2 rounded-lg bg-slate-100 p-1" aria-label="Account access">
-    <button
-      type="button"
-      class="rounded-md px-3 py-2 text-sm font-medium"
-      [class.bg-white]="!isRegistering()"
-      [class.shadow-sm]="!isRegistering()"
-      [attr.aria-pressed]="!isRegistering()"
-      (click)="setMode('login')"
+    <div
+      class="mt-7 grid grid-cols-2 gap-1 rounded-lg border border-line bg-paper p-1"
+      aria-label="Account access"
     >
-      Sign in
-    </button>
-    <button
-      type="button"
-      class="rounded-md px-3 py-2 text-sm font-medium"
-      [class.bg-white]="isRegistering()"
-      [class.shadow-sm]="isRegistering()"
-      [attr.aria-pressed]="isRegistering()"
-      (click)="setMode('register')"
-    >
-      Register
-    </button>
-  </div>
-
-  <form class="space-y-4" [formGroup]="form" (ngSubmit)="submit()">
-    <div>
-      <label class="mb-1 block text-sm font-medium text-slate-700" for="email">Email</label>
-      <input
-        class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-        id="email"
-        type="email"
-        autocomplete="email"
-        formControlName="email"
-        required
-      />
-      @if (form.controls.email.touched && form.controls.email.invalid) {
-        <p class="mt-1 text-sm text-red-700">Enter a valid email address.</p>
-      }
+      <button
+        type="button"
+        class="rounded-md px-3 py-2 text-sm font-medium transition"
+        [class.bg-surface]="!isRegistering()"
+        [class.text-ink]="!isRegistering()"
+        [class.shadow-sm]="!isRegistering()"
+        [class.text-muted]="isRegistering()"
+        [attr.aria-pressed]="!isRegistering()"
+        (click)="setMode('login')"
+      >
+        Sign in
+      </button>
+      <button
+        type="button"
+        class="rounded-md px-3 py-2 text-sm font-medium transition"
+        [class.bg-surface]="isRegistering()"
+        [class.text-ink]="isRegistering()"
+        [class.shadow-sm]="isRegistering()"
+        [class.text-muted]="!isRegistering()"
+        [attr.aria-pressed]="isRegistering()"
+        (click)="setMode('register')"
+      >
+        Register
+      </button>
     </div>
 
-    <div>
-      <label class="mb-1 block text-sm font-medium text-slate-700" for="password">Password</label>
-      <input
-        class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-        id="password"
-        type="password"
-        [attr.autocomplete]="isRegistering() ? 'new-password' : 'current-password'"
-        formControlName="password"
-        required
-        minlength="8"
-      />
-      @if (form.controls.password.touched && form.controls.password.invalid) {
-        <p class="mt-1 text-sm text-red-700">Use at least 8 characters.</p>
-      }
-      @if (isRegistering()) {
-        <p class="mt-1 text-xs text-slate-500">
-          Include an uppercase letter, lowercase letter, number, and symbol.
-        </p>
-      }
-    </div>
-
-    @if (isRegistering()) {
+    <form class="mt-6 space-y-4" [formGroup]="form" (ngSubmit)="submit()">
       <div>
-        <label class="mb-1 block text-sm font-medium text-slate-700" for="confirm-password">
-          Confirm password
-        </label>
+        <label class="mb-1.5 block text-sm font-medium" for="email">Email</label>
         <input
-          class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-          id="confirm-password"
-          type="password"
-          autocomplete="new-password"
-          formControlName="confirmPassword"
+          class="w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[15px] text-ink outline-none placeholder:text-muted/60 focus:border-pine-500 focus:ring-4 focus:ring-pine-100"
+          id="email"
+          type="email"
+          autocomplete="email"
+          formControlName="email"
           required
         />
-        @if (form.controls.confirmPassword.touched && form.controls.confirmPassword.invalid) {
-          <p class="mt-1 text-sm text-red-700">Confirm your password.</p>
-        } @else if (form.controls.confirmPassword.touched && form.hasError('passwordsMismatch')) {
-          <p class="mt-1 text-sm text-red-700">Passwords do not match.</p>
+        @if (form.controls.email.touched && form.controls.email.invalid) {
+          <p class="mt-1.5 text-sm text-red-700">Enter a valid email address.</p>
         }
       </div>
-    }
 
-    @if (errorMessage(); as error) {
-      <p class="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{{ error }}</p>
-    }
+      <div>
+        <label class="mb-1.5 block text-sm font-medium" for="password">Password</label>
+        <input
+          class="w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[15px] text-ink outline-none placeholder:text-muted/60 focus:border-pine-500 focus:ring-4 focus:ring-pine-100"
+          id="password"
+          type="password"
+          [attr.autocomplete]="isRegistering() ? 'new-password' : 'current-password'"
+          formControlName="password"
+          required
+          minlength="8"
+        />
+        @if (form.controls.password.touched && form.controls.password.invalid) {
+          <p class="mt-1.5 text-sm text-red-700">Use at least 8 characters.</p>
+        }
+        @if (isRegistering()) {
+          <p class="mt-1.5 text-[13px] text-muted">
+            Include an uppercase letter, lowercase letter, number, and symbol.
+          </p>
+        }
+      </div>
 
-    <button
-      class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-      type="submit"
-      [disabled]="isSubmitting() || form.invalid"
-    >
-      {{ isSubmitting() ? 'Please wait…' : isRegistering() ? 'Create account' : 'Sign in' }}
-    </button>
-  </form>
-</section>
+      @if (isRegistering()) {
+        <div>
+          <label class="mb-1.5 block text-sm font-medium" for="confirm-password">
+            Confirm password
+          </label>
+          <input
+            class="w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[15px] text-ink outline-none placeholder:text-muted/60 focus:border-pine-500 focus:ring-4 focus:ring-pine-100"
+            id="confirm-password"
+            type="password"
+            autocomplete="new-password"
+            formControlName="confirmPassword"
+            required
+          />
+          @if (form.controls.confirmPassword.touched && form.controls.confirmPassword.invalid) {
+            <p class="mt-1.5 text-sm text-red-700">Confirm your password.</p>
+          } @else if (form.controls.confirmPassword.touched && form.hasError('passwordsMismatch')) {
+            <p class="mt-1.5 text-sm text-red-700">Passwords do not match.</p>
+          }
+        </div>
+      }
+
+      @if (errorMessage(); as error) {
+        <p
+          class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+          role="alert"
+        >
+          {{ error }}
+        </p>
+      }
+
+      <button
+        class="w-full rounded-lg bg-pine-700 px-4 py-3 font-semibold text-paper transition hover:bg-pine-800 disabled:cursor-not-allowed disabled:opacity-50"
+        type="submit"
+        [disabled]="isSubmitting() || form.invalid"
+      >
+        {{ isSubmitting() ? 'Please wait…' : isRegistering() ? 'Create account' : 'Sign in' }}
+      </button>
+    </form>
+  </section>
+</div>

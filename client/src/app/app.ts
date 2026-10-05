@@ -13,8 +13,6 @@ export class App {
   /** Whether the mobile navigation panel is expanded. */
   protected readonly menuOpen = signal(false);
 
-  private readonly router = inject(Router);
-
   protected toggleMenu(): void {
     this.menuOpen.update((open) => !open);
   }
@@ -26,6 +24,6 @@ export class App {
   protected signOut(): void {
     this.auth.logout();
     this.menuOpen.set(false);
-    void this.router.navigate(['/']);
+    window.location.href = '/';
   }
 }

@@ -35,7 +35,7 @@ export class AskPage {
   protected readonly statusDotClasses: Readonly<Record<DocumentStatus, string>> = {
     Pending: 'bg-amber-400',
     Processing: 'bg-sky-400',
-    Ready: 'bg-emerald-500',
+    Ready: 'bg-pine-600',
     Failed: 'bg-red-500',
   };
 

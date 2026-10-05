@@ -1,41 +1,36 @@
-<div class="flex min-h-screen flex-col bg-slate-50 text-slate-900">
-  <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/80 backdrop-blur">
+<div class="flex min-h-screen flex-col bg-paper">
+  <header class="sticky top-0 z-40 border-b border-line bg-paper/85 backdrop-blur">
     <div
-      class="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6"
+      class="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6"
     >
-      <h1 class="text-lg font-bold tracking-tight">
+      <h1>
         <a class="flex items-center gap-2.5" routerLink="/">
-          <span
-            class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-sm font-bold text-white shadow-sm"
-            aria-hidden="true"
-          >
-            DA
-          </span>
-          <span>Document Assistant</span>
+          <span class="h-2.5 w-2.5 shrink-0 rounded-[2px] bg-pine-600" aria-hidden="true"></span>
+          <span class="font-display text-lg font-semibold tracking-tight">Document Assistant</span>
         </a>
       </h1>
 
       @if (auth.session(); as session) {
-        <nav class="hidden items-center gap-1 md:flex" aria-label="Account">
+        <nav class="hidden items-center gap-6 md:flex" aria-label="Account">
           <a
-            class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            class="nav-link py-2 text-sm font-medium"
             routerLink="/ask"
-            routerLinkActive="bg-indigo-50 text-indigo-700"
+            routerLinkActive="nav-active"
           >
             Ask
           </a>
           <a
-            class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            class="nav-link py-2 text-sm font-medium"
             routerLink="/my-documents"
-            routerLinkActive="bg-indigo-50 text-indigo-700"
+            routerLinkActive="nav-active"
           >
             My documents
           </a>
-          <span class="ml-2 hidden max-w-xs truncate text-sm text-slate-500 lg:inline">
+          <span class="hidden max-w-xs truncate text-sm text-muted lg:inline">
             {{ session.email }}
           </span>
           <button
-            class="ml-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            class="rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-ink transition hover:border-pine-300 hover:bg-pine-50"
             type="button"
             (click)="signOut()"
           >
@@ -43,15 +38,10 @@
           </button>
         </nav>
       } @else {
-        <nav class="hidden items-center gap-2 md:flex" aria-label="Account">
+        <nav class="hidden items-center gap-6 md:flex" aria-label="Account">
+          <a class="nav-link py-2 text-sm font-medium" routerLink="/auth">Login</a>
           <a
-            class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-            routerLink="/auth"
-          >
-            Login
-          </a>
-          <a
-            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
+            class="rounded-lg bg-pine-700 px-4 py-2 text-sm font-semibold text-paper transition hover:bg-pine-800"
             routerLink="/auth"
             [queryParams]="{ mode: 'register' }"
           >
@@ -61,7 +51,7 @@
       }
 
       <button
-        class="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 md:hidden"
+        class="inline-flex h-10 w-10 items-center justify-center rounded-lg text-ink transition hover:bg-pine-50 md:hidden"
         type="button"
         aria-label="Toggle navigation"
         aria-controls="mobile-nav"
@@ -71,7 +61,7 @@
         @if (menuOpen()) {
           <svg
             aria-hidden="true"
-            class="h-6 w-6"
+            class="h-5 w-5"
             fill="none"
             stroke="currentColor"
             stroke-width="2"
@@ -82,7 +72,7 @@
         } @else {
           <svg
             aria-hidden="true"
-            class="h-6 w-6"
+            class="h-5 w-5"
             fill="none"
             stroke="currentColor"
             stroke-width="2"
@@ -96,31 +86,33 @@
 
     @if (menuOpen()) {
       <nav
-        class="border-t border-slate-200 bg-white/95 px-4 pb-4 pt-2 md:hidden"
+        class="border-t border-line bg-paper px-4 pb-4 pt-2 md:hidden"
         id="mobile-nav"
         aria-label="Mobile"
       >
         <div class="flex flex-col gap-1">
           @if (auth.session(); as session) {
-            <p class="truncate px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+            <p class="truncate px-3 py-2 text-sm text-muted">
               {{ session.email }}
             </p>
             <a
-              class="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              class="nav-link rounded-lg px-3 py-2.5 text-sm font-medium"
               routerLink="/ask"
+              routerLinkActive="nav-active"
               (click)="closeMenu()"
             >
               Ask
             </a>
             <a
-              class="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              class="nav-link rounded-lg px-3 py-2.5 text-sm font-medium"
               routerLink="/my-documents"
+              routerLinkActive="nav-active"
               (click)="closeMenu()"
             >
               My documents
             </a>
             <button
-              class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              class="rounded-lg px-3 py-2.5 text-left text-sm font-medium text-ink transition hover:bg-pine-50"
               type="button"
               (click)="signOut()"
             >
@@ -128,14 +120,14 @@
             </button>
           } @else {
             <a
-              class="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              class="nav-link rounded-lg px-3 py-2.5 text-sm font-medium"
               routerLink="/auth"
               (click)="closeMenu()"
             >
               Login
             </a>
             <a
-              class="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-700"
+              class="rounded-lg bg-pine-700 px-3 py-2.5 text-center text-sm font-semibold text-paper transition hover:bg-pine-800"
               routerLink="/auth"
               [queryParams]="{ mode: 'register' }"
               (click)="closeMenu()"
@@ -148,7 +140,7 @@
     }
   </header>
 
-  <main class="flex-1 px-4 py-8 sm:px-6">
+  <main class="flex-1 px-4 py-8 sm:px-6 sm:py-10">
     <div class="mx-auto w-full max-w-6xl">
       <router-outlet />
     </div>
