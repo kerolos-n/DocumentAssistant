@@ -1,3 +1,4 @@
+using DocumentAssistant.Services.Chat;
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -53,6 +54,10 @@ internal sealed class GlobalExceptionHandler(
                 (StatusCodes.Status401Unauthorized, "Unauthorized"),
             KeyNotFoundException =>
                 (StatusCodes.Status404NotFound, "Not Found"),
+            // The assistant's provider is upstream, so its failures are a gateway problem, not a
+            // server fault. The exception's message is safe to show and says what the user can do.
+            ChatServiceException =>
+                (StatusCodes.Status502BadGateway, "The assistant is unavailable."),
             _ =>
                 (StatusCodes.Status500InternalServerError, "Internal Server Error"),
         };

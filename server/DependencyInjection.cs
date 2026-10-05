@@ -4,10 +4,12 @@ using System.Text.Json.Serialization;
 using System.Reflection;
 using DocumentAssistant.Common.Behaviors;
 using DocumentAssistant.Common.Ingestion;
+using DocumentAssistant.Common.Questions;
 using DocumentAssistant.Extensions;
 using DocumentAssistant.Features.Auth;
 using DocumentAssistant.Data;
 using DocumentAssistant.Services;
+using DocumentAssistant.Services.Chat;
 using DocumentAssistant.Services.Ingestion;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -110,6 +112,7 @@ public static class DependencyInjection
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
         AddIngestion(services, configuration);
+        AddQuestionAnswering(services, configuration);
 
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -203,5 +206,49 @@ public static class DependencyInjection
             model,
             IngestionDefaults.EmbeddingDimensions,
             batchSize));
+    }
+
+    /// <summary>
+    /// Registers retrieval knobs and the chat provider that answers questions. Runs after
+    /// <see cref="AddIngestion"/>, which has already rejected a missing API key.
+    /// </summary>
+    private static void AddQuestionAnswering(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var topK = configuration.GetValue("Retrieval:TopK", RetrievalOptions.DefaultTopK);
+        var similarityThreshold = configuration.GetValue(
+            "Retrieval:SimilarityThreshold",
+            RetrievalOptions.DefaultSimilarityThreshold);
+        services.AddSingleton(new RetrievalOptions(topK, similarityThreshold));
+
+        var apiKey = configuration["Gemini:ApiKey"]!;
+
+        var model = configuration["Gemini:ChatModel"];
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            model = GeminiChatService.DefaultModel;
+        }
+
+        var maxOutputTokens = configuration.GetValue(
+            "Gemini:ChatMaxOutputTokens",
+            GeminiChatService.DefaultMaxOutputTokens);
+        var timeoutSeconds = configuration.GetValue(
+            "Gemini:ChatTimeoutSeconds",
+            GeminiChatService.DefaultTimeoutSeconds);
+
+        services.AddHttpClient(GeminiChatService.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(GeminiChatService.BaseAddress);
+            // A header rather than the ?key= query parameter keeps the secret out of URLs and logs.
+            client.DefaultRequestHeaders.Add("x-goog-api-key", apiKey);
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        });
+
+        services.AddSingleton<IChatService>(provider => new GeminiChatService(
+            provider.GetRequiredService<IHttpClientFactory>(),
+            provider.GetRequiredService<ILogger<GeminiChatService>>(),
+            model,
+            maxOutputTokens));
     }
 }

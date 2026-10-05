@@ -27,16 +27,28 @@ public sealed class GeminiEmbeddingService(
     /// <summary><c>batchEmbedContents</c> rejects more than 100 inputs per call.</summary>
     public const int MaxBatchSize = 100;
 
-    /// <summary>
-    /// Chunks are indexed for retrieval, so they are embedded as documents. Queries will need
-    /// their own call using <c>RETRIEVAL_QUERY</c> — mixing the two degrades similarity.
-    /// </summary>
-    private const string TaskType = "RETRIEVAL_DOCUMENT";
+    /// <summary>Chunks are indexed for retrieval, so they are embedded as documents.</summary>
+    private const string DocumentTaskType = "RETRIEVAL_DOCUMENT";
+
+    /// <summary>A question is embedded as a query; mixing the two task types degrades similarity.</summary>
+    private const string QueryTaskType = "RETRIEVAL_QUERY";
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
-    public async Task<IReadOnlyList<float[]>> EmbedAsync(
+    public Task<IReadOnlyList<float[]>> EmbedDocumentsAsync(
         IReadOnlyList<string> inputs,
+        CancellationToken cancellationToken) =>
+        EmbedAsync(inputs, DocumentTaskType, cancellationToken);
+
+    public async Task<float[]> EmbedQueryAsync(string query, CancellationToken cancellationToken)
+    {
+        var vectors = await EmbedAsync([query], QueryTaskType, cancellationToken);
+        return vectors[0];
+    }
+
+    private async Task<IReadOnlyList<float[]>> EmbedAsync(
+        IReadOnlyList<string> inputs,
+        string taskType,
         CancellationToken cancellationToken)
     {
         if (inputs.Count == 0)
@@ -60,7 +72,7 @@ public sealed class GeminiEmbeddingService(
                     // The API wants the fully-qualified resource name here, not the bare id.
                     Model: $"models/{model}",
                     Content: new EmbedContent([new EmbedPart(inputs[i])]),
-                    TaskType: TaskType,
+                    TaskType: taskType,
                     OutputDimensionality: dimensions));
             }
 

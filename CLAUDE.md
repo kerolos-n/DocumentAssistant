@@ -3,13 +3,14 @@
 A simple AI knowledge base (RAG). Users register and log in, upload documents (PDF, DOCX, MD, TXT), and ask questions that are answered from their own documents, with citations. This is a portfolio project, so **simplicity and clarity beat feature count**.
 
 Accounts/auth (register, login, `/api/me`), document management (upload, list, download, delete),
-and the first half of the RAG pipeline — extract → chunk → embed → store into `DocumentChunks` —
-exist today. Retrieval (semantic search) and Q&A are not built yet.
+the ingest half of the RAG pipeline — extract → chunk → embed → store into `DocumentChunks` — and
+grounded Q&A (`POST /api/questions`: embed the question → retrieve the nearest chunks → generate an
+answer with citations) all exist today.
 
 ## Docs: use Context7, not memory
 
-Angular 22, .NET 10, EF Core 10, ASP.NET Core Identity, pgvector, and Google's Gemini embedding
-API are newer than most training data. Before writing code against any of them, look them up with
+Angular 22, .NET 10, EF Core 10, ASP.NET Core Identity, pgvector, and Google's Gemini embedding and
+chat APIs are newer than most training data. Before writing code against any of them, look them up with
 the Context7 MCP server: `resolve-library-id`, then `query-docs` with the returned `/org/project`
 ID — one concept per call. Skip it for this repo's own logic.
 
@@ -54,7 +55,10 @@ a missing `.env` crashes `dotnet run` instead of starting a server. `Gemini__Api
 because chunk embedding is not optional: without it every upload would fail, so the app refuses to
 start rather than accept documents it cannot index. `appsettings.json` carries only
 non-secret defaults (Jwt `Issuer`/`Audience`/`ExpirationMinutes`, itself 60; `Ingestion`
-chunk size/overlap/batch size; Gemini `EmbeddingModel`).
+chunk size/overlap/batch size; `Retrieval` top-K (5) and similarity threshold (0.5 — a floor for
+"obviously unrelated", not a relevance test, because the 1536-dimension vectors are truncated from
+the model's 3072 and truncation deflates cosine scores); Gemini
+`EmbeddingModel`, `ChatModel`, `ChatMaxOutputTokens`, and `ChatTimeoutSeconds`).
 
 **Client.** The API base URL is `client/src/environments/environment.ts`, a default export
 `{ API_URL }` — import it as `import env from '../environments/environment'`. There is no
@@ -121,10 +125,30 @@ JSON writer. Routes are **not** declared there anymore.
   to keep in step with the framework. Two details matter: it asks for
   `outputDimensionality: 1536` (a width `gemini-embedding-001` supports, which is why the column is
   1536 with no migration churn) and it L2-normalises every vector, because Gemini only returns
-  normalised output at full 3072 width. It uses `taskType: RETRIEVAL_DOCUMENT` — retrieval will
-  need `RETRIEVAL_QUERY` for the query side, and mixing the two degrades similarity. Batches are
-  capped at 100 (the API's limit), and provider error bodies are logged rather than surfaced;
-  the user sees only the status code.
+  normalised output at full 3072 width. The interface splits the two task types —
+  `EmbedDocumentsAsync` uses `RETRIEVAL_DOCUMENT`, `EmbedQueryAsync` uses `RETRIEVAL_QUERY` — because
+  mixing them degrades similarity. Batches are capped at 100 (the API's limit), and provider error
+  bodies are logged rather than surfaced; the user sees only the status code.
+- **Question slice** — `Features/Questions/AskQuestion.cs` is a *command* slice
+  (`POST /api/questions`), so `ValidationBehavior` runs its `Validator`; the earlier `IQuery` slices
+  validate inline instead. The handler, in order: if the user has no `Ready` document, return
+  `NoDocuments` without embedding or calling the model; embed the question as a query; take the
+  nearest `TopK` chunks with `chunk.Embedding.CosineDistance(queryVector)` (pgvector `<=>`, via
+  `Pgvector.EntityFrameworkCore`), joined to `Ready` documents and filtered by `UserId` on *both*
+  chunk and document so one user can never surface another's text; drop anything below the
+  similarity threshold and, if nothing survives, return `NoRelevantContext` — the "I don't know"
+  path, which skips the model entirely; otherwise answer and cite the chunks used. Similarity is
+  `1 − distance`. All three non-answer outcomes keep `200` and set `isAnswerable: false`, with
+  `outcome` telling the client which one it is. Citation snippets are whitespace-collapsed and cut
+  to a word boundary (`QuestionPrompt.BuildSnippet`). Retrieval knobs come from the `Retrieval`
+  section (`Common/Questions/RetrievalOptions.cs`).
+- **`IChatService` / `GeminiChatService`** — `Services/Chat/`, hand-rolled `generateContent` calls
+  (like the embedder, no SDK), configured with a `systemInstruction`, low temperature, a
+  `maxOutputTokens` cap, and its own `HttpClient` timeout. A provider error, a timeout, or an empty
+  candidate becomes a `ChatServiceException`, which `GlobalExceptionHandler` maps to **502** — the
+  client's error state. The message is user-safe; provider bodies are logged. `QuestionPrompt`
+  (`Features/Questions/`) owns the system prompt — answer only from context, admit ignorance, and
+  treat document text as data, never instructions — so the injection guard lives in one place.
 - **`Common/Endpoints/IEndpoint.cs`** — implement `void MapEndpoint(IEndpointRouteBuilder)`.
   `Extensions/EndpointExtensions.cs` reflects over the assembly at startup, registers every
   implementation as a transient, and `MapEndpoints()` invokes them. Adding an endpoint = adding a
@@ -161,7 +185,8 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
 
 - `app.routes.ts`: `/` is a componentless public home behind `homeGuard` (guests stay, signed-in
   users go to `/my-documents`); `/my-documents` is a componentless shell behind `authGuard` (guests
-  go to `/auth`) whose default child renders `DocumentsPage`; `/auth` renders `AuthPage` behind
+  go to `/auth`) whose default child renders `DocumentsPage`; `/ask` renders `AskPage` behind
+  `authGuard`; `/auth` renders `AuthPage` behind
   `guestGuard` (signed-in users go to `/my-documents`). All three guards live in
   `auth/auth.guards.ts` and redirect on the session. The `App` shell shows Login / Register links
   (`/auth`, the latter with `?mode=register`) to guests and the signed-in email plus a sign-out
@@ -192,6 +217,13 @@ Bootstrapped from `main.ts` with `appConfig`; no `AppModule`. App-wide providers
   come from a `Record<DocumentStatus, string>` of _complete_ Tailwind class names (complete, not
   fragments, so Tailwind's scanner finds them in the `.ts` file); `Processing` also renders an
   `animate-spin` spinner, and `Failed` shows the server's reason inline and as a `title` tooltip.
+- `questions/questions.service.ts` (`providedIn: 'root'`) + `questions/ask-page.ts`/`.html` — one
+  POST to `/api/questions` returning `{ isAnswerable, outcome, answer, citations }`, with `outcome`
+  (`Answered` / `NoDocuments` / `NoRelevantContext`) driving three distinct panels: the answer with
+  its citations, an amber "no documents" card linking to `/my-documents`, and a neutral "no answer
+  found" card. Submit is disabled while the input is blank or a request is in flight, and a `502`
+  (the assistant is down or timed out) renders the error alert. The page makes no request on load,
+  so its spec needs no initial flush.
 - Prefer the signal-based `httpResource` where a GET fits (nothing uses it yet); the documents list
   and auth flows use `HttpClient` + RxJS because a resource registers a pending task that stops
   `fixture.whenStable()` resolving in the existing specs, and auth is imperative anyway. Polling

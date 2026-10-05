@@ -88,7 +88,7 @@ public sealed class DocumentIngestionWorker(
         }
 
         var embedder = services.GetRequiredService<IEmbeddingService>();
-        var embeddings = await embedder.EmbedAsync(
+        var embeddings = await embedder.EmbedDocumentsAsync(
             [.. chunks.Select(chunk => chunk.Content)],
             cancellationToken);
 
