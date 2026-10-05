@@ -1,16 +1,18 @@
 using System.Security.Claims;
 using System.Text;
 using System.Reflection;
-using DocumentAssistant.Common.Auth;
+using DocumentAssistant.Common.Behaviors;
 using DocumentAssistant.Extensions;
 using DocumentAssistant.Features.Auth;
 using DocumentAssistant.Data;
 using DocumentAssistant.Services;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using RealTimeChatAPI.Common.Messaging;
+using DocumentAssistant.Common.Exceptions;
+using DocumentAssistant.Common.CQRS;
 
 namespace DocumentAssistant;
 
@@ -19,6 +21,9 @@ public static class DependencyInjection
     public static void AddAllServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddHealthChecks();
+
+        services.AddProblemDetails();
+        services.AddExceptionHandler<GlobalExceptionHandler>();
 
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException(
@@ -52,9 +57,21 @@ public static class DependencyInjection
                 options.User.RequireUniqueEmail = true;
                 options.Password.RequiredLength = 8;
             }).AddEntityFrameworkStores<ApplicationDbContext>();
-        services.AddScoped<ICommandHandler<Login.Command, TokenResponse?>, Login.Handler>();
-        services.AddScoped<ICommandHandler<Register.Command, TokenResponse?>, Register.Handler>();
-        services.AddScoped<ICommandHandler<GetUser.Command, GetUser.UserResponse?>, GetUser.Handler>();
+
+        services.Scan(scan => scan.FromAssembliesOf(typeof(DependencyInjection))
+        .AddClasses(classes => classes.AssignableTo(typeof(IQueryHandler<,>)), publicOnly: false)
+            .AsImplementedInterfaces()
+            .WithScopedLifetime()
+        .AddClasses(classes => classes.AssignableTo(typeof(ICommandHandler<>)), publicOnly: false)
+            .AsImplementedInterfaces()
+            .WithScopedLifetime()
+        .AddClasses(classes => classes.AssignableTo(typeof(ICommandHandler<,>)), publicOnly: false)
+            .AsImplementedInterfaces()
+            .WithScopedLifetime());
+
+        services.Decorate(typeof(ICommandHandler<,>), typeof(ValidationBehavior.CommandHandler<,>));
+        // services.Decorate(typeof(ICommandHandler<>), typeof(ValidationBehavior.CommandBaseHandler<>));
+
         services.AddEndpoints(Assembly.GetExecutingAssembly());
 
         services.AddSingleton(new JwtTokenService(jwtKey, jwtIssuer, jwtAudience, jwtExpirationMinutes));

@@ -1,8 +1,9 @@
-using DocumentAssistant.Common.Endpoints;
 using DocumentAssistant.Common.Auth;
+using DocumentAssistant.Common.CQRS;
+using DocumentAssistant.Common.Endpoints;
 using DocumentAssistant.Services;
+using FluentValidation;
 using Microsoft.AspNetCore.Identity;
-using RealTimeChatAPI.Common.Messaging;
 
 namespace DocumentAssistant.Features.Auth;
 
@@ -10,19 +11,27 @@ internal static class Login
 {
     internal sealed record Command(string? Email, string? Password) : ICommand<TokenResponse?>;
 
+    internal sealed class Validator : AbstractValidator<Command>
+    {
+        public Validator()
+        {
+            // Only malformed input is rejected here; unknown emails and wrong passwords stay a 401.
+            RuleFor(command => command.Email)
+                .NotEmpty().WithMessage("Enter your email address.");
+
+            RuleFor(command => command.Password)
+                .NotEmpty().WithMessage("Password is required.");
+        }
+    }
+
     internal sealed class Handler(
         UserManager<IdentityUser> userManager,
         JwtTokenService tokenService) : ICommandHandler<Command, TokenResponse?>
     {
         public async Task<TokenResponse?> Handle(Command command, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(command.Email) || string.IsNullOrEmpty(command.Password))
-            {
-                return null;
-            }
-
-            var user = await userManager.FindByEmailAsync(command.Email);
-            if (user is null || !await userManager.CheckPasswordAsync(user, command.Password))
+            var user = await userManager.FindByEmailAsync(command.Email!);
+            if (user is null || !await userManager.CheckPasswordAsync(user, command.Password!))
             {
                 return null;
             }

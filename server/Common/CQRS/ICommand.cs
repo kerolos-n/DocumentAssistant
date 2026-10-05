@@ -1,4 +1,4 @@
-﻿namespace RealTimeChatAPI.Common.Messaging;
+﻿namespace DocumentAssistant.Common.CQRS;
 
 public interface ICommand;
 

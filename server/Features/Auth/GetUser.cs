@@ -1,7 +1,7 @@
 using System.Security.Claims;
+using DocumentAssistant.Common.CQRS;
 using DocumentAssistant.Common.Endpoints;
 using Microsoft.AspNetCore.Identity;
-using RealTimeChatAPI.Common.Messaging;
 
 namespace DocumentAssistant.Features.Auth;
 

@@ -20,6 +20,7 @@ builder.Services.AddAllServices(builder.Configuration);
 
 var app = builder.Build();
 
+app.UseExceptionHandler();
 app.UseCors("client");
 app.UseAuthentication();
 app.UseAuthorization();
